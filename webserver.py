@@ -8,7 +8,7 @@ import datetime
 import functools
 import sys # For logging console output
 
-from handler import Handler  # Add this import
+from api.handler import Handler  # Add this import
 
 HOST = "localhost"
 PORT = 8000
