@@ -1,8 +1,27 @@
-JAVAVERSION = "25"
-JAVA = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
-
 import os
 import subprocess
+
+import api.get.lastbuildtoolsversion
+
+import time
+import threading
+
+JAVAVERSION = "25"
+JAVA = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
+BUILDTOOLSJAR = "BuildTools" + api.get.lastbuildtoolsversion.last_buildtools_version() + ".jar"
+
+def follow_log_file(path, stop_event):
+    try:
+        with open(path, "r") as f:
+            f.seek(0, 2)  # move to end of file
+            while not stop_event.is_set():
+                line = f.readline()
+                if line:
+                    print(line, end="")
+                else:
+                    time.sleep(0.25)
+    except FileNotFoundError:
+        pass
 
 def create_server(server_name, server_type, server_version):
     print("creating server...")
@@ -29,24 +48,43 @@ def create_server(server_name, server_type, server_version):
     elif server_type.lower() == "spigot":
         os.system("cd data/servers/" + server_name + " && wget https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar")
         print("Downloaded BuildTools.jar successfully.")
+        os.system(f"mv data/servers/{server_name}/BuildTools.jar data/servers/{server_name}/{BUILDTOOLSJAR}")
 
-        TryBuildServer = subprocess.run(
-            f"cd data/servers/{server_name} && {JAVA} -jar BuildTools.jar --rev {server_version}",
-            capture_output=True,
-            text=True,
-            shell=True
+        log_path = f"data/servers/{server_name}/buildtools.log"
+        stop_event = threading.Event()
+
+        with open(log_path, "w") as log_file:
+            process = subprocess.Popen(
+                f"cd data/servers/{server_name} && {JAVA} -jar {BUILDTOOLSJAR} --rev {server_version}",
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                shell=True
+            )
+
+        log_thread = threading.Thread(
+            target=follow_log_file,
+            args=(log_path, stop_event),
+            daemon=True
         )
+        log_thread.start()
 
-        if "Success! Everything completed successfully." in TryBuildServer.stdout:
+        return_code = process.wait()
+        stop_event.set()
+        log_thread.join()
+
+        with open(log_path, "r") as log_file:
+            log_content = log_file.read()
+
+        if "Success! Everything completed successfully." in log_content:
+            os.remove(log_path)
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             return f"Server '{server_name}' created successfully."
-        elif "*** The version you have requested to build requires Java versions between" in TryBuildServer.stdout:
+        elif "*** The version you have requested to build requires Java versions between" in log_content:
             os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
+            return "Java version mismatch. Installed required Java version."
         else:
-            print("Failed to build the Spigot server. Please check if Java is installed and the version is correct.")
+            print("Failed to build the Spigot server. See buildtools.log for details.")
             return "Failed to create server."
-
-        print(f"Spigot server '{server_name}' created with version {server_version}.")
 
     # elif server_type.lower() == "paper":
     #     if "not found" in IsWgetInstalled.stdout:
