@@ -6,7 +6,7 @@ USER = "Admin"
 QUITCMD = ['q', 'quit', 'back', 'return']
 
 def ApiGetHelloWorld():
-    api.get.helloworld.helloworld()
+    api.get.helloworld.hello_world()
 
 def ApiPostServerCreate(cmd):
         args = cmd[len("server create "):].strip().split()
