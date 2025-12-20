@@ -1,6 +1,7 @@
 import api.get.helloworld
 
 import api.post.server.create
+import api.post.server.run
 
 USER = "Admin"
 QUITCMD = ['q', 'quit', 'back', 'return']
@@ -33,6 +34,20 @@ def ApiPostServerCreate(cmd):
         response = api.post.server.create.create_server(server_name, server_type, server_version)
         return print(f"Server created: {response}")
 
+def ApiPostServerRun(cmd):
+    args = cmd[len("server run "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            server_name = input("Enter server name to run: ").strip()
+            if server_name == '':
+                print("Server name cannot be empty.")
+                continue
+            args = [server_name]
+    else:
+        server_name = args[0]
+    response = api.post.server.run.run_server(server_name)
+    return print(f"Server run response: {response}")
+
 while True:
     try:
         cmd = input(USER + ">> ")
@@ -64,12 +79,23 @@ while True:
                         continue
                     elif cmd_server.startswith("create"):
                         ApiPostServerCreate("server " + cmd_server)
+                    elif cmd_server.startswith("run"):
+                        ApiPostServerRun("server " + cmd_server)
+                    # elif cmd_server.startswith("stop"):
+                    #     ApiPostServerStop("server " + cmd_server)
+                    # elif cmd_server.startswith("restart"):
+                    #     ApiPostServerRestart("server " + cmd_server)
+                    # elif cmd_server.startswith("status"):
+                    #     ApiGetServerStatus("server " + cmd_server)
                     else:
                         print("Invalid server command. Type 'back' to return.")
 
             elif cmd.startswith("server create"):
                 ApiPostServerCreate(cmd)
-            
+
+            elif cmd.startswith("server run"):
+                ApiPostServerRun(cmd)
+
         else:
             print("Invalid command. Please try again.")
     except KeyboardInterrupt:
