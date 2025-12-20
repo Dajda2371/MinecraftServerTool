@@ -1,1 +1,9 @@
 data
+config.py
+__pychache__
+__pychache__/
+.vscode
+*.log
+.env
+.DS_Store
+*.pyc

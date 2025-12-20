@@ -10,20 +10,27 @@ def ApiGetHelloWorld():
 
 def ApiPostServerCreate(cmd):
         args = cmd[len("server create "):].strip().split()
-        if len(args) != 2:
-            while len(args) != 2:
+        if len(args) != 3:
+            while len(args) != 3:
                 server_name = input("Enter server name: ").strip()
                 if server_name == '':
                     print("Server name cannot be empty.")
                     continue
-                server_ip = input("Enter server IP: ").strip()
-                if server_ip == '':
-                    print("Server IP cannot be empty.")
+
+                server_type = input("Enter server type: ").strip()
+                if server_type == '':
+                    print("Server type cannot be empty.")
                     continue
-                args = [server_name, server_ip]
+
+                server_version = input("Enter server version: ").strip()
+                if server_version == '':
+                    print("Server version cannot be empty.")
+                    continue
+
+                args = [server_name, server_type, server_version]
         else:
-            server_name, server_ip = args
-        response = api.post.server.create.create_server(server_name, server_ip)
+            server_name, server_type, server_version = args
+        response = api.post.server.create.create_server(server_name, server_type, server_version)
         return print(f"Server created: {response}")
 
 while True:
