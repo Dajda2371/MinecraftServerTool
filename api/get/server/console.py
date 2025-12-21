@@ -5,6 +5,9 @@ import time
 import readline
 import sys
 
+# Tracks whether the user has started typing in the console
+_user_typing = False
+
 def follow_log_file(path, stop_event, prompt="> "):
     try:
         with open(path, "r") as f:
@@ -12,10 +15,20 @@ def follow_log_file(path, stop_event, prompt="> "):
             while not stop_event.is_set():
                 line = f.readline()
                 if line:
-                    # Move to new line, print log, then redraw clean prompt
+                    # Save current partially typed input
+                    buffer = readline.get_line_buffer() if _user_typing else ""
+
+                    # Clear current input line
                     sys.stdout.write("\r")
+                    sys.stdout.write(" " * (len(prompt) + len(buffer) + 2))
+                    sys.stdout.write("\r")
+
+                    # Print log line
                     sys.stdout.write(line)
-                    sys.stdout.write(prompt)
+                    sys.stdout.flush()
+
+                    # Redraw prompt + preserved buffer
+                    sys.stdout.write(prompt + buffer)
                     sys.stdout.flush()
                 else:
                     time.sleep(0.3)
@@ -27,13 +40,16 @@ def interactive_console(server_name):
         print(f"Server '{server_name}' is not running.")
         return
 
+    # Ensure no leftover input from the outer CLI is present
+    try:
+        readline.set_startup_hook(lambda: readline.insert_text(""))
+    except Exception:
+        pass
+
     # Prefer Minecraft latest.log, fallback to screen log
     mc_log = f"data/servers/{server_name}/logs/latest.log"
     screen_log = "screenlog.0"
     log_path = mc_log if os.path.exists(mc_log) else screen_log
-
-    # Clear any previous readline state (prevents echoing outer CLI commands)
-    readline.clear_history()
 
     stop_event = threading.Event()
     log_thread = threading.Thread(
@@ -48,7 +64,16 @@ def interactive_console(server_name):
 
     try:
         while True:
-            command = input("> ").strip()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+
+            readline.set_pre_input_hook(lambda: setattr(sys.modules[__name__], "_user_typing", True))
+            global _user_typing
+            _user_typing = False
+            command = input()
+            readline.set_pre_input_hook(None)
+            _user_typing = False
+            command = command.strip()
 
             if command.lower() == "quit":
                 print("Console closed.")
@@ -61,6 +86,7 @@ def interactive_console(server_name):
     finally:
         stop_event.set()
         log_thread.join()
+        readline.set_startup_hook(None)
 
 def is_server_running(server_name):
     # Most reliable: exits 0 if the session exists
