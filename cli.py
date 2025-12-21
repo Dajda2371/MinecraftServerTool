@@ -1,4 +1,5 @@
 import api.get.helloworld
+import api.get.server.console
 
 import api.post.server.create
 import api.post.server.run
@@ -33,6 +34,19 @@ def ApiPostServerCreate(cmd):
             server_name, server_type, server_version = args
         response = api.post.server.create.create_server(server_name, server_type, server_version)
         return print(f"Server created: {response}")
+
+def ApiGetServerConsole(cmd):
+    args = cmd[len("server console "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            server_name = input("Enter server name for console: ").strip()
+            if server_name == '':
+                print("Server name cannot be empty.")
+                continue
+            args = [server_name]
+    else:
+        server_name = args[0]
+    api.get.server.console.interactive_console(server_name)
 
 def ApiPostServerRun(cmd):
     args = cmd[len("server run "):].strip().split()
@@ -87,6 +101,8 @@ while True:
                     #     ApiPostServerRestart("server " + cmd_server)
                     # elif cmd_server.startswith("status"):
                     #     ApiGetServerStatus("server " + cmd_server)
+                    elif cmd_server.startswith("console"):
+                        ApiGetServerConsole("server " + cmd_server)
                     else:
                         print("Invalid server command. Type 'back' to return.")
 
@@ -95,6 +111,12 @@ while True:
 
             elif cmd.startswith("server run"):
                 ApiPostServerRun(cmd)
+
+            elif cmd.startswith("server console"):
+                ApiGetServerConsole(cmd)
+
+            else:
+                print("Invalid server command. Type 'help' for a list of commands.")
 
         else:
             print("Invalid command. Please try again.")

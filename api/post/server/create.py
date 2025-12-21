@@ -8,7 +8,9 @@ import threading
 
 JAVAVERSION = "25"
 JAVA = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
-BUILDTOOLSJAR = "BuildTools" + api.get.lastbuildtoolsversion.last_buildtools_version() + ".jar"
+LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
+BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
+RAMUSAGE = "1024M"
 
 def follow_log_file(path, stop_event):
     try:
@@ -77,6 +79,9 @@ def create_server(server_name, server_type, server_version):
 
         if "Success! Everything completed successfully." in log_content:
             os.remove(log_path)
+            os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
+            os.system(f'echo "{JAVA} -Xmx{RAMUSAGE} -Xms{RAMUSAGE} -jar spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar nogui" >> data/servers/{server_name}/start.sh')
+            os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             return f"Server '{server_name}' created successfully."
         elif "*** The version you have requested to build requires Java versions between" in log_content:
