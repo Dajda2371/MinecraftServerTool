@@ -2,15 +2,21 @@ import os
 import subprocess
 import threading
 import time
+import readline
+import sys
 
-def follow_log_file(path, stop_event):
+def follow_log_file(path, stop_event, prompt="> "):
     try:
         with open(path, "r") as f:
             f.seek(0, 2)
             while not stop_event.is_set():
                 line = f.readline()
                 if line:
-                    print(line, end="")
+                    # Move to new line, print log, then redraw clean prompt
+                    sys.stdout.write("\r")
+                    sys.stdout.write(line)
+                    sys.stdout.write(prompt)
+                    sys.stdout.flush()
                 else:
                     time.sleep(0.3)
     except FileNotFoundError:
@@ -26,10 +32,13 @@ def interactive_console(server_name):
     screen_log = "screenlog.0"
     log_path = mc_log if os.path.exists(mc_log) else screen_log
 
+    # Clear any previous readline state (prevents echoing outer CLI commands)
+    readline.clear_history()
+
     stop_event = threading.Event()
     log_thread = threading.Thread(
         target=follow_log_file,
-        args=(log_path, stop_event),
+        args=(log_path, stop_event, "> "),
         daemon=True
     )
     log_thread.start()
