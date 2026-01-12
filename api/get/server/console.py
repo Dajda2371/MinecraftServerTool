@@ -3,6 +3,7 @@ import re
 import socket
 import threading
 import time
+import _thread
 from mcrcon import MCRcon
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -42,6 +43,13 @@ def follow_log_file(path, stop_event, rcon_ready_event, rcon_port):
                 if rcon_ready_event and not rcon_ready_event.is_set():
                     if "RCON running on" in line and str(rcon_port) in line:
                         rcon_ready_event.set()
+                
+                if "ThreadedAnvilChunkStorage: All dimensions are saved" in line:
+                    if not stop_event.is_set():
+                        # Server closed the RCON connection
+                        print("\n[RCON connection stopped by server. Quitting...]")
+                        _thread.interrupt_main()
+                        return
             else:
                 # No new line, check for rotation
                 try:
