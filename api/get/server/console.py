@@ -7,6 +7,7 @@ import _thread
 from mcrcon import MCRcon
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
+from api.post.server.create import run_build_tools
 
 def get_server_properties(server_name):
     properties = {}
@@ -21,7 +22,24 @@ def get_server_properties(server_name):
         return None
     return properties
 
-def follow_log_file(path, stop_event, rcon_ready_event, rcon_port):
+def get_server_version(server_name):
+    try:
+        with open(f"data/servers/{server_name}/start.sh", "r") as f:
+            content = f.read()
+            # Look for spigot jar pattern: spigot<buildtools_ver>-<mc_ver>.jar
+            # e.g. spigot196-1.21.11.jar or just spigot-1.21.1.jar
+            match = re.search(r"spigot(?:.*?)?-(\d+(?:\.\d+)+)\.jar", content)
+            if match:
+                return match.group(1)
+            # Fallback for simple names
+            match = re.search(r"server-(\d+(?:\.\d+)+)\.jar", content)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+    return "latest" # Fallback
+
+def follow_log_file(path, stop_event, rcon_ready_event, rcon_port, update_needed_event):
     print(f"Streaming logs from: {path}")
     
     current_file = None
@@ -44,12 +62,18 @@ def follow_log_file(path, stop_event, rcon_ready_event, rcon_port):
                     if "RCON running on" in line and str(rcon_port) in line:
                         rcon_ready_event.set()
                 
+                if "*** Error, this build is outdated ***" in line:
+                    update_needed_event.set()
+
                 if "ThreadedAnvilChunkStorage: All dimensions are saved" in line:
                     if not stop_event.is_set():
-                        # Server closed the RCON connection
-                        print("\n[RCON connection stopped by server. Quitting...]")
-                        _thread.interrupt_main()
-                        return
+                        # Check if this was an update stop
+                        if update_needed_event.is_set():
+                             print("\n[Server stopped for update.]")
+                        else:
+                             print("\n[RCON connection stopped by server. Quitting...]")
+                             _thread.interrupt_main()
+                             return
             else:
                 # No new line, check for rotation
                 try:
@@ -94,14 +118,21 @@ def interactive_console(server_name):
 
     rcon_port = int(properties["rcon.port"])
     rcon_password = properties["rcon.password"]
-    log_path = f"data/servers/{server_name}/logs/latest.log"
+    
+    # Prefer console.out (full output including startup errors) if it exists, otherwise fall back to latest.log
+    console_out_path = f"data/servers/{server_name}/console.out"
+    if os.path.exists(console_out_path):
+        log_path = console_out_path
+    else:
+        log_path = f"data/servers/{server_name}/logs/latest.log"
 
     stop_event = threading.Event()
     rcon_ready_event = threading.Event()
+    update_needed_event = threading.Event()
     
     log_thread = threading.Thread(
         target=follow_log_file,
-        args=(log_path, stop_event, rcon_ready_event, rcon_port),
+        args=(log_path, stop_event, rcon_ready_event, rcon_port, update_needed_event),
         daemon=True
     )
     log_thread.start()
@@ -127,6 +158,25 @@ def interactive_console(server_name):
                         # Give it a moment before retry
                         time.sleep(1)
                         continue
+
+                    if update_needed_event.is_set():
+                        print(f"\n[System] Outdated build detected. Stopping server '{server_name}' to update...")
+                        rcon.command("stop")
+                        # Wait for server to actually stop
+                        while is_server_running(rcon):
+                            time.sleep(1)
+                        print("[System] Server stopped. Starting update process...")
+                        
+                        # Stop log follower
+                        stop_event.set()
+                        log_thread.join()
+                        
+                        version = get_server_version(server_name)
+                        print(f"[System] Updating server to version {version}...")
+                        success, msg = run_build_tools(server_name, version)
+                        print(f"[System] {msg}")
+                        print("[System] Update complete. Please run the server again.")
+                        return
 
                     print(f"Connected to server '{server_name}' via RCON. Type 'quit' to exit.")
 

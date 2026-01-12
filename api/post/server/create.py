@@ -25,6 +25,49 @@ def follow_log_file(path, stop_event):
     except FileNotFoundError:
         pass
 
+def run_build_tools(server_name, server_version):
+    os.system("cd data/servers/" + server_name + " && wget https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar")
+    print("Downloaded BuildTools.jar successfully.")
+    os.system(f"mv data/servers/{server_name}/BuildTools.jar data/servers/{server_name}/{BUILDTOOLSJAR}")
+
+    log_path = f"data/servers/{server_name}/buildtools.log"
+    stop_event = threading.Event()
+
+    with open(log_path, "w") as log_file:
+        process = subprocess.Popen(
+            f"cd data/servers/{server_name} && {JAVA} -jar {BUILDTOOLSJAR} --rev {server_version}",
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            shell=True
+        )
+
+    log_thread = threading.Thread(
+        target=follow_log_file,
+        args=(log_path, stop_event),
+        daemon=True
+    )
+    log_thread.start()
+
+    return_code = process.wait()
+    stop_event.set()
+    log_thread.join()
+
+    with open(log_path, "r") as log_file:
+        log_content = log_file.read()
+
+    if "Success! Everything completed successfully." in log_content:
+        os.remove(log_path)
+        # Clean up old jars if updating? - Not strictly asked, but good practice.
+        # For now, just move the new one.
+        os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
+        return True, "Build successful."
+    elif "*** The version you have requested to build requires Java versions between" in log_content:
+        os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
+        return False, "Java version mismatch. Installed required Java version."
+    else:
+        print("Failed to build the Spigot server. See buildtools.log for details.")
+        return False, "Failed to create server."
+
 def create_server(server_name, server_type, server_version):
     print("creating server...")
     os.system("cd data/servers && mkdir " + server_name)
@@ -48,49 +91,15 @@ def create_server(server_name, server_type, server_version):
         return "Failed to create server."
 
     elif server_type.lower() == "spigot":
-        os.system("cd data/servers/" + server_name + " && wget https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar")
-        print("Downloaded BuildTools.jar successfully.")
-        os.system(f"mv data/servers/{server_name}/BuildTools.jar data/servers/{server_name}/{BUILDTOOLSJAR}")
-
-        log_path = f"data/servers/{server_name}/buildtools.log"
-        stop_event = threading.Event()
-
-        with open(log_path, "w") as log_file:
-            process = subprocess.Popen(
-                f"cd data/servers/{server_name} && {JAVA} -jar {BUILDTOOLSJAR} --rev {server_version}",
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                shell=True
-            )
-
-        log_thread = threading.Thread(
-            target=follow_log_file,
-            args=(log_path, stop_event),
-            daemon=True
-        )
-        log_thread.start()
-
-        return_code = process.wait()
-        stop_event.set()
-        log_thread.join()
-
-        with open(log_path, "r") as log_file:
-            log_content = log_file.read()
-
-        if "Success! Everything completed successfully." in log_content:
-            os.remove(log_path)
-            os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
+        success, message = run_build_tools(server_name, server_version)
+        if success:
             os.system(f'echo "{JAVA} -Xmx{RAMUSAGE} -Xms{RAMUSAGE} -jar spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar nogui" >> data/servers/{server_name}/start.sh')
             os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
             os.system(f'echo "enable-rcon=true\nrcon.password=admin\nrcon.port=25575" > data/servers/{server_name}/server.properties')
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             return f"Server '{server_name}' created successfully."
-        elif "*** The version you have requested to build requires Java versions between" in log_content:
-            os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
-            return "Java version mismatch. Installed required Java version."
         else:
-            print("Failed to build the Spigot server. See buildtools.log for details.")
-            return "Failed to create server."
+            return message
 
     # elif server_type.lower() == "paper":
     #     if "not found" in IsWgetInstalled.stdout:
@@ -100,7 +109,7 @@ def create_server(server_name, server_type, server_version):
     #     else:
     #         os.system("cd data/servers/" + server_name + " && wget https://papermc.io/api/v2/projects/paper/versions/" + server_version + "/builds/" + server_version + "/downloads/paper-" + server_version + ".jar")
     #         print("Downloaded Paper.jar successfully.")
-
+    # 
     else:
         print(f"Server type '{server_type}' is not supported yet.")
     return
