@@ -22,30 +22,54 @@ def get_server_properties(server_name):
 
 def follow_log_file(path, stop_event, rcon_ready_event, rcon_port):
     print(f"Streaming logs from: {path}")
-    file_opened = False
     
+    current_file = None
+    current_inode = None
+
     while not stop_event.is_set():
         try:
-            with open(path, "r") as f:
-                file_opened = True
-                while not stop_event.is_set():
-                    line = f.readline()
-                    if line:
-                        print(line, end="")
-                        if rcon_ready_event and not rcon_ready_event.is_set():
-                            if "RCON running on" in line and str(rcon_port) in line:
-                                rcon_ready_event.set()
-                    else:
-                        time.sleep(0.3)
-        except FileNotFoundError:
-            if not file_opened:
-                time.sleep(1)
+            if current_file is None:
+                if os.path.exists(path):
+                    current_file = open(path, "r")
+                    current_inode = os.fstat(current_file.fileno()).st_ino
+                else:
+                    time.sleep(1)
+                    continue
+
+            line = current_file.readline()
+            if line:
+                print(line, end="")
+                if rcon_ready_event and not rcon_ready_event.is_set():
+                    if "RCON running on" in line and str(rcon_port) in line:
+                        rcon_ready_event.set()
             else:
-                # If file was opened but now is gone, maybe server restarted/log rotated?
-                # We try to reopen.
-                time.sleep(1)
-        except Exception:
+                # No new line, check for rotation
+                try:
+                    if os.path.exists(path):
+                        new_inode = os.stat(path).st_ino
+                        if new_inode != current_inode:
+                            # File rotated
+                            print(f"\n[Log rotated detected. Reopening {path}...]\n")
+                            current_file.close()
+                            current_file = None
+                            current_inode = None
+                            # Reset event because previous RCON signal might be from old file
+                            if rcon_ready_event:
+                                rcon_ready_event.clear()
+                            continue
+                except FileNotFoundError:
+                    pass # path might have disappeared momentarily
+                
+                time.sleep(0.3)
+
+        except Exception as e:
+            print(f"\n[Error follow_log_file: {e}]\n")
+            if current_file:
+                current_file.close()
             break
+    
+    if current_file:
+        current_file.close()
 
 def is_server_running(rcon):
     try:
@@ -76,40 +100,57 @@ def interactive_console(server_name):
 
     try:
         print(f"Waiting for RCON to start on port {rcon_port}...")
-        while not rcon_ready_event.is_set():
-            time.sleep(0.5)
+        
+        while not stop_event.is_set():
+            # Wait for the signal
+            while not rcon_ready_event.is_set() and not stop_event.is_set():
+                time.sleep(0.5)
+            
+            if stop_event.is_set():
+                break
 
-        with MCRcon("localhost", rcon_password, rcon_port) as rcon:
-            if not is_server_running(rcon):
-                print(f"Server '{server_name}' is not running.")
-                return
-
-            print(f"Connected to server '{server_name}' via RCON. Type 'quit' to exit.")
-
-            session = PromptSession()
-
+            # Try connecting
             try:
-                with patch_stdout():
-                    while True:
-                        if not is_server_running(rcon):
-                            print(f"Server '{server_name}' has stopped. Exiting console.")
-                            break
-                        try:
-                            command = session.prompt("> ")
-                            if command.lower() == "quit":
-                                print("Console closed.")
-                                break
-                            if command:
-                                response = rcon.command(command)
-                                if response:
-                                    print(response)
-                        except (EOFError, KeyboardInterrupt):
-                            print("\nExiting console.")
-                            break
-            except Exception as e:
-                print(f"Console error: {e}")
-    except ConnectionRefusedError:
-        print(f"RCON connection to '{server_name}' was refused. Is the server running?")
+                with MCRcon("localhost", rcon_password, rcon_port) as rcon:
+                    if not is_server_running(rcon):
+                        # Could be phantom positive or server died immediately
+                        print(f"Server '{server_name}' reachable but returned error on list command. Retrying...")
+                        rcon_ready_event.clear()
+                        # Give it a moment before retry
+                        time.sleep(1)
+                        continue
+
+                    print(f"Connected to server '{server_name}' via RCON. Type 'quit' to exit.")
+
+                    session = PromptSession()
+                    with patch_stdout():
+                        while True:
+                            if not is_server_running(rcon):
+                                print(f"Server '{server_name}' has stopped. Exiting console.")
+                                return # Exit completely
+                            try:
+                                command = session.prompt("> ")
+                                if command.lower() == "quit":
+                                    print("Console closed.")
+                                    return # Exit completely
+                                if command:
+                                    response = rcon.command(command)
+                                    if response:
+                                        print(response)
+                            except (EOFError, KeyboardInterrupt):
+                                print("\nExiting console.")
+                                return # Exit completely
+            except ConnectionRefusedError:
+                # This often happens if we read a STALE log file that said "RCON ready" 
+                # but the actual server is not listening (or dead).
+                # We should clear the event and wait for a NEW signal (likely from log rotation).
+                # OR we should retry delicately if we think it's just startup lag.
+                # But typically "RCON running" msg comes AFTER bind.
+                # So refusal means stale log.
+                # print(f"[Connection Refused] Stale log entry detected? Waiting for fresh signal...")
+                rcon_ready_event.clear()
+                time.sleep(1)
+
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
     finally:
