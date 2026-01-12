@@ -31,42 +31,55 @@ def run_build_tools(server_name, server_version):
     os.system(f"mv data/servers/{server_name}/BuildTools.jar data/servers/{server_name}/{BUILDTOOLSJAR}")
 
     log_path = f"data/servers/{server_name}/buildtools.log"
-    stop_event = threading.Event()
+    max_retries = 3
 
-    with open(log_path, "w") as log_file:
-        process = subprocess.Popen(
-            f"cd data/servers/{server_name} && {JAVA} -jar {BUILDTOOLSJAR} --rev {server_version}",
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            shell=True
+    for attempt in range(max_retries):
+        stop_event = threading.Event()
+
+        with open(log_path, "w") as log_file:
+            process = subprocess.Popen(
+                f"cd data/servers/{server_name} && {JAVA} -jar {BUILDTOOLSJAR} --rev {server_version}",
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                shell=True
+            )
+
+        log_thread = threading.Thread(
+            target=follow_log_file,
+            args=(log_path, stop_event),
+            daemon=True
         )
+        log_thread.start()
 
-    log_thread = threading.Thread(
-        target=follow_log_file,
-        args=(log_path, stop_event),
-        daemon=True
-    )
-    log_thread.start()
+        return_code = process.wait()
+        stop_event.set()
+        log_thread.join()
 
-    return_code = process.wait()
-    stop_event.set()
-    log_thread.join()
+        with open(log_path, "r") as log_file:
+            log_content = log_file.read()
 
-    with open(log_path, "r") as log_file:
-        log_content = log_file.read()
+        if "Success! Everything completed successfully." in log_content:
+            os.remove(log_path)
+            # Clean up old jars if updating? - Not strictly asked, but good practice.
+            # For now, just move the new one.
+            os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
+            return True, "Build successful."
+        
+        if "Connection timeout" in log_content or "Could not resolve host" in log_content:
+            if attempt < max_retries - 1:
+                print(f"\n[Warning] BuildTools encountered a network error. Retrying... (Attempt {attempt+2}/{max_retries})\n")
+                time.sleep(3)
+                continue
+        
+        if "*** The version you have requested to build requires Java versions between" in log_content:
+            os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
+            return False, "Java version mismatch. Installed required Java version."
+        
+        # If we're here and it's not a timeout (or we ran out of retries), it's a hard failure
+        break
 
-    if "Success! Everything completed successfully." in log_content:
-        os.remove(log_path)
-        # Clean up old jars if updating? - Not strictly asked, but good practice.
-        # For now, just move the new one.
-        os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
-        return True, "Build successful."
-    elif "*** The version you have requested to build requires Java versions between" in log_content:
-        os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
-        return False, "Java version mismatch. Installed required Java version."
-    else:
-        print("Failed to build the Spigot server. See buildtools.log for details.")
-        return False, "Failed to create server."
+    print("Failed to build the Spigot server. See buildtools.log for details.")
+    return False, "Failed to create server."
 
 def create_server(server_name, server_type, server_version):
     print("creating server...")
