@@ -82,6 +82,7 @@ def create_server(server_name, server_type, server_version):
             os.system(f"mv data/servers/{server_name}/spigot-{server_version}.jar data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar")
             os.system(f'echo "{JAVA} -Xmx{RAMUSAGE} -Xms{RAMUSAGE} -jar spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar nogui" >> data/servers/{server_name}/start.sh')
             os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
+            os.system(f'echo "enable-rcon=true\nrcon.password=admin\nrcon.port=25575" > data/servers/{server_name}/server.properties')
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             return f"Server '{server_name}' created successfully."
         elif "*** The version you have requested to build requires Java versions between" in log_content:

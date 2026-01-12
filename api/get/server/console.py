@@ -1,11 +1,24 @@
 import os
-import subprocess
+import re
+import socket
 import threading
 import time
-import sys
-
+from mcrcon import MCRcon
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
+
+def get_server_properties(server_name):
+    properties = {}
+    path = f"data/servers/{server_name}/server.properties"
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                if "=" in line:
+                    key, value = line.strip().split("=", 1)
+                    properties[key] = value
+    except FileNotFoundError:
+        return None
+    return properties
 
 def follow_log_file(path, stop_event):
     try:
@@ -20,76 +33,67 @@ def follow_log_file(path, stop_event):
     except FileNotFoundError:
         print(f"(log file not found yet: {path})")
 
+def is_server_running(rcon):
+    try:
+        rcon.command("list")
+        return True
+    except (socket.error, ConnectionRefusedError):
+        return False
+
 def interactive_console(server_name):
-    if not is_server_running(server_name):
-        print(f"Server '{server_name}' is not running.")
+    properties = get_server_properties(server_name)
+    if not properties or "rcon.port" not in properties or "rcon.password" not in properties:
+        print(f"RCON is not configured for server '{server_name}'.")
         return
 
-    mc_log = f"data/servers/{server_name}/logs/latest.log"
-    screen_log = "screenlog.0"
-    log_path = mc_log if os.path.exists(mc_log) else screen_log
+    rcon_port = int(properties["rcon.port"])
+    rcon_password = properties["rcon.password"]
 
-    stop_event = threading.Event()
-    log_thread = threading.Thread(
-        target=follow_log_file,
-        args=(log_path, stop_event),
-        daemon=True
-    )
-    log_thread.start()
-
-    print(f"Connected to server '{server_name}'. Type 'quit' to exit.")
-    print(f"Streaming logs from: {log_path}")
-
-    session = PromptSession()
+    animation = "|/-\\"
+    for i in range(30):
+        time.sleep(1)
+        print(f"Connecting to server... {animation[i % len(animation)]}", end="\r")
 
     try:
-        with patch_stdout():
-            while True:
-                try:
-                    command = session.prompt("> ")
-                    if command.lower() == "quit":
-                        print("Console closed.")
-                        break
+        with MCRcon("localhost", rcon_password, rcon_port) as rcon:
+            if not is_server_running(rcon):
+                print(f"Server '{server_name}' is not running.")
+                return
 
-                    if command:
-                        send_server_command(server_name, command)
-                except (EOFError, KeyboardInterrupt):
-                    print("\nExiting console.")
-                    break
-    finally:
-        stop_event.set()
-        log_thread.join()
+            log_path = f"data/servers/{server_name}/logs/latest.log"
+            stop_event = threading.Event()
+            log_thread = threading.Thread(
+                target=follow_log_file,
+                args=(log_path, stop_event),
+                daemon=True
+            )
+            log_thread.start()
 
-def is_server_running(server_name):
-    # Most reliable: exits 0 if the session exists
-    probe = subprocess.run(
-        ["screen", "-S", server_name, "-Q", "select", "."],
-        capture_output=True,
-        text=True
-    )
-    if probe.returncode == 0:
-        return True
+            print(f"Connected to server '{server_name}' via RCON. Type 'quit' to exit.")
+            print(f"Streaming logs from: {log_path}")
 
-    # Fallback: parse screen list output (stdout or stderr depending on build)
-    listing = subprocess.run(
-        ["screen", "-list"],
-        capture_output=True,
-        text=True
-    )
-    combined = (listing.stdout or "") + "\n" + (listing.stderr or "")
+            session = PromptSession()
 
-    # Typical lines look like: "12345.MyServer\t(Detached)"
-    for line in combined.splitlines():
-        if f".{server_name}" in line or line.strip().endswith(f".{server_name}") or f"\t{server_name}\t" in line:
-            return True
-
-    return False
-
-def send_server_command(server_name, command):
-    escaped_command = command.replace('"', '\\"')
-
-    os.system(
-        f'screen -S {server_name} -X stuff "{escaped_command}\n"'
-    )
-
-    return f"Command sent to server '{server_name}': {command}"
+            try:
+                with patch_stdout():
+                    while True:
+                        if not is_server_running(rcon):
+                            print(f"Server '{server_name}' has stopped. Exiting console.")
+                            break
+                        try:
+                            command = session.prompt("> ")
+                            if command.lower() == "quit":
+                                print("Console closed.")
+                                break
+                            if command:
+                                response = rcon.command(command)
+                                if response:
+                                    print(response)
+                        except (EOFError, KeyboardInterrupt):
+                            print("\nExiting console.")
+                            break
+            finally:
+                stop_event.set()
+                log_thread.join()
+    except ConnectionRefusedError:
+        print(f"RCON connection to '{server_name}' was refused. Is the server running?")
