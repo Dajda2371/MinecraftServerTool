@@ -3,12 +3,27 @@ import api.get.server.console
 
 import api.post.server.create
 import api.post.server.run
+import api.post.server.rebuild
 
 USER = "Admin"
 QUITCMD = ['q', 'quit', 'back', 'return']
 
 def ApiGetHelloWorld():
     api.get.helloworld.hello_world()
+
+def ApiPostServerRebuild(cmd):
+    args = cmd[len("server rebuild "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            server_name = input("Enter server name to rebuild: ").strip()
+            if server_name == '':
+                print("Server name cannot be empty.")
+                continue
+            args = [server_name]
+    else:
+        server_name = args[0]
+    response = api.post.server.rebuild.rebuild_server(server_name)
+    return print(f"Server rebuild response: {response}")
 
 def ApiPostServerCreate(cmd):
         args = cmd[len("server create "):].strip().split()
@@ -76,6 +91,7 @@ while True:
             print("Available commands:")
             print("  helloworld               - Get a hello world message")
             print("  server create <name> <ip> - Create a new server")
+            print("  server rebuild <name>    - Rebuild a server and update info")
             print("  server                   - Enter server command mode")
             print("  help                     - Show this help message")
             print("  exit                     - Exit the program")
@@ -93,6 +109,8 @@ while True:
                         continue
                     elif cmd_server.startswith("create"):
                         ApiPostServerCreate("server " + cmd_server)
+                    elif cmd_server.startswith("rebuild"):
+                        ApiPostServerRebuild("server " + cmd_server)
                     elif cmd_server.startswith("run"):
                         ApiPostServerRun("server " + cmd_server)
                     # elif cmd_server.startswith("stop"):
@@ -108,6 +126,9 @@ while True:
 
             elif cmd.startswith("server create"):
                 ApiPostServerCreate(cmd)
+            
+            elif cmd.startswith("server rebuild"):
+                ApiPostServerRebuild(cmd)
 
             elif cmd.startswith("server run"):
                 ApiPostServerRun(cmd)
