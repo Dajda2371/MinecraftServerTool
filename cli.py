@@ -139,6 +139,35 @@ while True:
             else:
                 print("Invalid server command. Type 'help' for a list of commands.")
 
+        elif cmd.startswith("user"):
+            if cmd == "user":
+                while True:
+                    cmd_user = input(USER + "/User>> ")
+                    if cmd_user.lower() in QUITCMD:
+                        break
+                    elif cmd_user.strip() == '':
+                        continue
+                    elif cmd_user.startswith("create"):
+                        ApiPostUserCreate("user " + cmd_user)
+                    elif cmd_user.startswith("delete"):
+                        ApiPostUserDelete("user " + cmd_user)
+                    elif cmd_user.startswith("list"):
+                        ApiGetServerList()
+                    else:
+                        print("Invalid user command. Type 'back' to return.")
+
+            elif cmd.startswith("user create"):
+                ApiPostUserCreate(cmd)
+
+            elif cmd.startswith("user delete"):
+                ApiPostUserDelete(cmd)
+
+            elif cmd.startswith("user list"):
+                ApiGetServerList()
+
+            else:
+                print("Invalid user command. Type 'help' for a list of commands.")
+
         else:
             print("Invalid command. Please try again.")
     except KeyboardInterrupt:
