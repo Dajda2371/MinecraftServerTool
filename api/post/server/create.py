@@ -27,9 +27,18 @@ def follow_log_file(path, stop_event):
         pass
 
 def run_build_tools(server_name, server_version):
-    os.system("cd data/servers/" + server_name + " && wget https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar")
-    print("Downloaded BuildTools.jar successfully.")
-    os.system(f"mv data/servers/{server_name}/BuildTools.jar data/servers/{server_name}/{BUILDTOOLSJAR}")
+    target_jar = f"data/servers/{server_name}/{BUILDTOOLSJAR}"
+    unversioned_jar = f"data/servers/{server_name}/BuildTools.jar"
+    
+    if os.path.exists(target_jar):
+        print(f"found existing {BUILDTOOLSJAR}, skipping download")
+    elif os.path.exists(unversioned_jar):
+        print(f"found existing BuildTools.jar, renaming to {BUILDTOOLSJAR}")
+        os.rename(unversioned_jar, target_jar)
+    else:
+        # Use -O to save directly to the target filename, avoiding conflicts
+        os.system(f"cd data/servers/{server_name} && wget -O {BUILDTOOLSJAR} https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar")
+        print("Downloaded BuildTools.jar successfully.")
 
     log_path = f"data/servers/{server_name}/buildtools.log"
     max_retries = 3
