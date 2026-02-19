@@ -1,6 +1,5 @@
 import api.get.helloworld
 import api.get.server.console
-import api.get.server.owner.list
 import api.get.user.list
 
 import api.post.server.create
