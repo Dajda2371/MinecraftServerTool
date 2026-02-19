@@ -5,6 +5,10 @@ import api.post.server.create
 import api.post.server.run
 import api.post.server.rebuild
 
+import api.post.user.create
+import api.post.user.delete
+import api.get.user.list
+
 USER = "Admin"
 QUITCMD = ['q', 'quit', 'back', 'return']
 
@@ -76,6 +80,39 @@ def ApiPostServerRun(cmd):
         server_name = args[0]
     response = api.post.server.run.run_server(server_name)
     return print(f"Server run response: {response}")
+
+def ApiPostUserCreate(cmd):
+    args = cmd[len("user create "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            username = input("Enter username: ").strip()
+            if username == '':
+                print("Username cannot be empty.")
+                continue
+            args = [username]
+    else:
+        username = args[0]
+    
+    response = api.post.user.create.create_user(username)
+    return print(f"User create response: {response}")
+
+def ApiPostUserDelete(cmd):
+    args = cmd[len("user delete "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            username = input("Enter username to delete: ").strip()
+            if username == '':
+                print("Username cannot be empty.")
+                continue
+            args = [username]
+    else:
+        username = args[0]
+    
+    response = api.post.user.delete.delete_user(username)
+    return print(f"User delete response: {response}")
+
+def ApiGetUserList():
+    print(api.get.user.list.list_users())
 
 while True:
     try:
@@ -152,7 +189,7 @@ while True:
                     elif cmd_user.startswith("delete"):
                         ApiPostUserDelete("user " + cmd_user)
                     elif cmd_user.startswith("list"):
-                        ApiGetServerList()
+                        ApiGetUserList()
                     else:
                         print("Invalid user command. Type 'back' to return.")
 
@@ -163,7 +200,7 @@ while True:
                 ApiPostUserDelete(cmd)
 
             elif cmd.startswith("user list"):
-                ApiGetServerList()
+                ApiGetUserList()
 
             else:
                 print("Invalid user command. Type 'help' for a list of commands.")
