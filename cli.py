@@ -1,5 +1,4 @@
 import api.get.helloworld
-
 import api.get.server.console
 import api.get.server.owner.list
 import api.get.user.list
@@ -7,8 +6,7 @@ import api.get.user.list
 import api.post.server.create
 import api.post.server.rebuild
 import api.post.server.run
-import api.post.server.owner.add
-import api.post.server.owner.remove
+import api.post.server.owner
 import api.post.user.create
 import api.post.user.delete
 
@@ -54,7 +52,7 @@ def ApiPostServerCreate(cmd):
                 args = [server_name, server_type, server_version]
         else:
             server_name, server_type, server_version = args
-        response = api.post.server.create.create_server(server_name, server_type, server_version)
+        response = api.post.server.create.create_server(server_name, server_type, server_version, owner=USER)
         return print(f"Server created: {response}")
 
 def ApiGetServerConsole(cmd):
@@ -117,37 +115,16 @@ def ApiPostUserDelete(cmd):
 def ApiGetUserList():
     print(api.get.user.list.list_users())
 
-def ApiPostServerOwnerAdd(cmd):
-    # Expected cmd format: "server owner add <server_name> <username>"
-    args = cmd[len("server owner add "):].strip().split()
+def ApiPostServerOwner(cmd):
+    # Expected cmd format: "server owner <server_name> <username>"
+    args = cmd[len("server owner "):].strip().split()
     if len(args) != 2:
-        print("Usage: server owner add <server_name> <username>")
+        print("Usage: server owner <server_name> <username>")
         return
 
     server_name, username = args
-    response = api.post.server.owner.add.add_owner(server_name, username)
-    print(f"Server owner add response: {response}")
-
-def ApiPostServerOwnerRemove(cmd):
-    # Expected cmd format: "server owner remove <server_name> <username>"
-    args = cmd[len("server owner remove "):].strip().split()
-    if len(args) != 2:
-        print("Usage: server owner remove <server_name> <username>")
-        return
-
-    server_name, username = args
-    response = api.post.server.owner.remove.remove_owner(server_name, username)
-    print(f"Server owner remove response: {response}")
-
-def ApiGetServerOwnerList(cmd):
-    # Expected cmd format: "server owner list <server_name>"
-    args = cmd[len("server owner list "):].strip().split()
-    if len(args) != 1:
-        print("Usage: server owner list <server_name>")
-        return
-
-    server_name = args[0]
-    print(api.get.server.owner.list.list_owners(server_name))
+    response = api.post.server.owner.update_owner(server_name, username)
+    print(f"Server owner update response: {response}")
 
 while True:
     try:
@@ -201,33 +178,13 @@ while True:
                                     break
                                 elif cmd_owner.strip() == '':
                                     continue
-                                elif cmd_owner.startswith("add"):
-                                    # cmd_owner is "add <server> <user>" or just "<server> <user>"?
-                                    # Logic in input loop means cmd_owner contains the input line.
-                                    # If user types "add s1 u1", cmd_owner is "add s1 u1".
-                                    # We need to construct "server owner add s1 u1"
-                                    # But wait, does user type "add s1 u1" or just "s1 u1"?
-                                    # If user types "s1 u1", it doesn't start with add.
-                                    # So user MUST type "add s1 u1".
-                                    # So construction: "server owner " + cmd_owner
-                                    # Result: "server owner add s1 u1"
-                                    ApiPostServerOwnerAdd("server owner " + cmd_owner)
-                                elif cmd_owner.startswith("remove"):
-                                    ApiPostServerOwnerRemove("server owner " + cmd_owner)
-                                elif cmd_owner.startswith("list"):
-                                    ApiGetServerOwnerList("server owner " + cmd_owner)
                                 else:
-                                    print("Invalid server owner command. Type 'back' to return.")
-                        elif cmd_server.startswith("owner add"):
-                            # cmd_server is "owner add s1 u1"
-                            # We construct "server " + cmd_server -> "server owner add s1 u1"
-                            ApiPostServerOwnerAdd("server " + cmd_server)
-                        elif cmd_server.startswith("owner remove"):
-                            ApiPostServerOwnerRemove("server " + cmd_server)
-                        elif cmd_server.startswith("owner list"):
-                            ApiGetServerOwnerList("server " + cmd_server)
-                        else:
-                            print("Invalid server owner command. Type 'back' to return.")
+                                    # User types "<server> <username>"
+                                    ApiPostServerOwner("server owner " + cmd_owner)
+                        
+                        elif cmd_server.startswith("owner"):
+                             # cmd_server is "owner <server> <username>"
+                             ApiPostServerOwner("server " + cmd_server)
                     else:
                         print("Invalid server command. Type 'back' to return.")
 
@@ -251,23 +208,10 @@ while True:
                             break
                         elif cmd_owner.strip() == '':
                             continue
-                        elif cmd_owner.startswith("add"):
-                            ApiPostServerOwnerAdd("server owner " + cmd_owner)
-                        elif cmd_owner.startswith("remove"):
-                            ApiPostServerOwnerRemove("server owner " + cmd_owner)
-                        elif cmd_owner.startswith("list"):
-                            ApiGetServerOwnerList("server owner " + cmd_owner)
                         else:
-                            print("Invalid server owner command. Type 'back' to return.")
-                elif cmd.startswith("server owner add"):
-                    ApiPostServerOwnerAdd(cmd)
-                elif cmd.startswith("server owner remove"):
-                    ApiPostServerOwnerRemove(cmd)
-                elif cmd.startswith("server owner list"):
-                    ApiGetServerOwnerList(cmd)
+                             ApiPostServerOwner("server owner " + cmd_owner)
                 else:
-                     # This handles "server owner" without arguments if needed, or falls through
-                    print("Invalid server owner command. Type 'back' to return.")
+                    ApiPostServerOwner(cmd)
 
             else:
                 print("Invalid server command. Type 'help' for a list of commands.")

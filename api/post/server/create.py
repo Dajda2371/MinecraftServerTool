@@ -117,7 +117,7 @@ def run_build_tools(server_name, server_version):
     print("Failed to build the Spigot server. See buildtools.log for details.")
     return False, "Failed to create server."
 
-def create_server(server_name, server_type, server_version):
+def create_server(server_name, server_type, server_version, owner="admin"):
     print("creating server...")
     os.system("cd data/servers && mkdir " + server_name)
     
@@ -147,7 +147,7 @@ def create_server(server_name, server_type, server_version):
             os.system(f'echo "enable-rcon=true\nrcon.password=admin\nrcon.port=25575" > data/servers/{server_name}/server.properties')
             
             full_jar_path = f"data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar"
-            update_server_info(server_name, "admin", "spigot", server_version, full_jar_path)
+            update_server_info(server_name, owner, "spigot", server_version, full_jar_path)
             
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             return f"Server '{server_name}' created successfully."

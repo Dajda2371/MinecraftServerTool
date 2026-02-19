@@ -85,98 +85,30 @@ def get_users():
     conn.close()
     return users
 
-def init_server_owners():
+def set_server_owner(server_name, owner_name):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS server_owners (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            server_id INTEGER,
-            user_id INTEGER,
-            FOREIGN KEY(server_id) REFERENCES servers(id),
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            UNIQUE(server_id, user_id)
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-def add_server_owner(server_name, username):
-    init_server_owners()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
     
     cursor.execute("SELECT id FROM servers WHERE name = ?", (server_name,))
     server = cursor.fetchone()
     if not server:
         conn.close()
         return False, "Server not found."
-    server_id = server[0]
-
-    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    if not user:
-        conn.close()
-        return False, "User not found."
-    user_id = user[0]
-
-    try:
-        cursor.execute("INSERT INTO server_owners (server_id, user_id) VALUES (?, ?)", (server_id, user_id))
-        conn.commit()
-        conn.close()
-        return True, "Owner added."
-    except sqlite3.IntegrityError:
-        conn.close()
-        return False, "User is already an owner."
-
-def remove_server_owner(server_name, username):
-    init_server_owners()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
     
-    cursor.execute("SELECT id FROM servers WHERE name = ?", (server_name,))
-    server = cursor.fetchone()
-    if not server:
-        conn.close()
-        return False, "Server not found."
-    server_id = server[0]
-
-    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+    # Check if user exists? The schema says owner is TEXT DEFAULT 'admin', not a foreign key.
+    # However, for consistency, we should check if the user exists in users table ONLY IF the user model is strictly enforced.
+    # But current schema for servers.owner is just TEXT. 
+    # Let's enforce that the owner must be a valid user if users table is being used.
+    
+    cursor.execute("SELECT id FROM users WHERE username = ?", (owner_name,))
     user = cursor.fetchone()
     if not user:
         conn.close()
-        return False, "User not found."
-    user_id = user[0]
+        return False, f"User '{owner_name}' not found."
 
-    cursor.execute("DELETE FROM server_owners WHERE server_id = ? AND user_id = ?", (server_id, user_id))
-    changes = conn.total_changes
+    cursor.execute("UPDATE servers SET owner = ? WHERE name = ?", (owner_name, server_name))
     conn.commit()
     conn.close()
-    
-    if changes > 0:
-        return True, "Owner removed."
-    else:
-        return False, "User was not an owner."
+    return True, f"Owner of server '{server_name}' updated to '{owner_name}'."
 
-def get_server_owners(server_name):
-    init_server_owners()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT id FROM servers WHERE name = ?", (server_name,))
-    server = cursor.fetchone()
-    if not server:
-        conn.close()
-        return []
-    
-    server_id = server[0]
-    cursor.execute('''
-        SELECT u.username FROM users u
-        JOIN server_owners so ON u.id = so.user_id
-        WHERE so.server_id = ?
-    ''', (server_id,))
-    
-    owners = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return owners
