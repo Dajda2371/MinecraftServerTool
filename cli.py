@@ -158,6 +158,30 @@ while True:
                     #     ApiGetServerStatus("server " + cmd_server)
                     elif cmd_server.startswith("console"):
                         ApiGetServerConsole("server " + cmd_server)
+                    elif cmd_server.startswith("owner"):
+                        if cmd_server == "owner":
+                            while True:
+                                cmd_owner = input(USER + "/Server/Owner>> ")
+                                if cmd_owner.lower() in QUITCMD:
+                                    break
+                                elif cmd_owner.strip() == '':
+                                    continue
+                                elif cmd_owner.startswith("add"):
+                                    ApiPostServerOwnerAdd("server owner add " + cmd_owner)
+                                elif cmd_owner.startswith("remove"):
+                                    ApiPostServerOwnerRemove("server owner remove " + cmd_owner)
+                                elif cmd_owner.startswith("list"):
+                                    ApiGetServerOwnerList("server owner list")
+                                else:
+                                    print("Invalid server owner command. Type 'back' to return.")
+                        elif cmd_server.startswith("owner add"):
+                            ApiPostServerOwnerAdd(cmd_server)
+                        elif cmd_server.startswith("owner remove"):
+                            ApiPostServerOwnerRemove(cmd_server)
+                        elif cmd_server.startswith("owner list"):
+                            ApiGetServerOwnerList(cmd_server)
+                        else:
+                            print("Invalid server owner command. Type 'back' to return.")
                     else:
                         print("Invalid server command. Type 'back' to return.")
 
@@ -172,6 +196,31 @@ while True:
 
             elif cmd.startswith("server console"):
                 ApiGetServerConsole(cmd)
+
+            elif cmd.startswith("server owner"):
+                if cmd == "server owner":
+                    while True:
+                        cmd_owner = input(USER + "/Server/Owner>> ")
+                        if cmd_owner.lower() in QUITCMD:
+                            break
+                        elif cmd_owner.strip() == '':
+                            continue
+                        elif cmd_owner.startswith("add"):
+                            ApiPostServerOwnerAdd("server owner add " + cmd_owner)
+                        elif cmd_owner.startswith("remove"):
+                            ApiPostServerOwnerRemove("server owner remove " + cmd_owner)
+                        elif cmd_owner.startswith("list"):
+                            ApiGetServerOwnerList("server owner list")
+                        else:
+                            print("Invalid server owner command. Type 'back' to return.")
+                elif cmd.startswith("owner add"):
+                    ApiPostServerOwnerAdd(cmd)
+                elif cmd.startswith("owner remove"):
+                    ApiPostServerOwnerRemove(cmd)
+                elif cmd.startswith("owner list"):
+                    ApiGetServerOwnerList(cmd)
+                else:
+                    print("Invalid server owner command. Type 'back' to return.")
 
             else:
                 print("Invalid server command. Type 'help' for a list of commands.")
