@@ -23,11 +23,43 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE
+            username TEXT NOT NULL UNIQUE,
+            password TEXT
         )
     ''')
+    
+    # Check if we need to add password column to existing table (migration)
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [info[1] for info in cursor.fetchall()]
+    if 'password' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN password TEXT")
+
+    # Check if users table is empty
+    cursor.execute("SELECT count(*) FROM users")
+    count = cursor.fetchone()[0]
+    if count == 0:
+        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", ('admin', None))
+        print("Initialized default 'admin' user with no password.")
+
     conn.commit()
     conn.close()
+
+def set_user_password(username, password):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+    user = cursor.fetchone()
+    
+    if user:
+        cursor.execute("UPDATE users SET password = ? WHERE username = ?", (password, username))
+        conn.commit()
+        conn.close()
+        return True
+    else:
+        conn.close()
+        return False
 
 def update_server_info(name, owner, type, version, jar_path):
     init_db()
