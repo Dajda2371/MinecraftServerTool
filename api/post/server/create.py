@@ -119,7 +119,7 @@ def run_build_tools(server_name, server_version):
 
 def create_server(server_name, server_type, server_version, owner="admin"):
     print("creating server...")
-    os.system("cd data/servers && mkdir " + server_name)
+    os.makedirs(f"data/servers/{server_name}", exist_ok=True)
     
     IsWgetInstalled = subprocess.run(
         ["which", "wget"],
