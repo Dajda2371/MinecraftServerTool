@@ -16,9 +16,17 @@ def init_db():
             owner TEXT DEFAULT 'admin',
             type TEXT,
             version TEXT,
-            jar_path TEXT
+            jar_path TEXT,
+            port INTEGER DEFAULT 25565
         )
     ''')
+    
+    # Check for port column migration
+    cursor.execute("PRAGMA table_info(servers)")
+    cols = [c[1] for c in cursor.fetchall()]
+    if 'port' not in cols:
+        cursor.execute("ALTER TABLE servers ADD COLUMN port INTEGER DEFAULT 25565")
+
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
@@ -61,29 +69,56 @@ def set_user_password(username, password):
         conn.close()
         return False
 
-def update_server_info(name, owner, type, version, jar_path):
+def update_server_info(name, owner, type, version, jar_path, port=None):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Check if exists
-    cursor.execute("SELECT id FROM servers WHERE name = ?", (name,))
+    cursor.execute("SELECT id, port FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
     
     if data:
+        # If port provided, update it, otherwise keep current
+        new_port = port if port is not None else data[1]
         cursor.execute('''
             UPDATE servers 
-            SET owner = ?, type = ?, version = ?, jar_path = ?
+            SET owner = ?, type = ?, version = ?, jar_path = ?, port = ?
             WHERE name = ?
-        ''', (owner, type, version, jar_path, name))
+        ''', (owner, type, version, jar_path, new_port, name))
     else:
+        # New server. If port not provided, pick next available from 25565
+        if port is None:
+            cursor.execute("SELECT max(port) FROM servers")
+            max_p = cursor.fetchone()[0]
+            port = (max_p + 1) if max_p else 25565
+
         cursor.execute('''
-            INSERT INTO servers (name, owner, type, version, jar_path)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (name, owner, type, version, jar_path))
+            INSERT INTO servers (name, owner, type, version, jar_path, port)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (name, owner, type, version, jar_path, port))
         
     conn.commit()
     conn.close()
+
+def get_server_info(name):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, owner, type, version, jar_path, port FROM servers WHERE name = ?", (name,))
+    data = cursor.fetchone()
+    conn.close()
+    if data:
+        return {
+            "name": data[0],
+            "owner": data[1],
+            "type": data[2],
+            "version": data[3],
+            "jar_path": data[4],
+            "port": data[5]
+        }
+    return None
+
 
 def add_user(username):
     init_db()

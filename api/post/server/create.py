@@ -8,7 +8,14 @@ import time
 import threading
 
 JAVAVERSION = "25"
-JAVA = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
+# Check for Java in multiple locations (internal container or user host)
+if os.path.exists("/usr/bin/java"):
+    JAVA = "/usr/bin/java"
+elif os.path.exists("/usr/local/bin/java"):
+    JAVA = "/usr/local/bin/java"
+else:
+    JAVA = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
+
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
 RAMUSAGE = "1024M"

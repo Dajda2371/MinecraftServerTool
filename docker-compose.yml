@@ -1,0 +1,12 @@
+services:
+  mc-tool:
+    build: .
+    container_name: minecraft-server-tool
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+    environment:
+      - MC_HOST_DATA_DIR=${PWD}/data
+    restart: unless-stopped
