@@ -41,7 +41,7 @@ def run_build_tools(server_name, server_version):
         print("Downloaded BuildTools.jar successfully.")
 
     log_path = f"data/servers/{server_name}/buildtools.log"
-    max_retries = 3
+    max_retries = 5
 
     for attempt in range(max_retries):
         stop_event = threading.Event()
@@ -71,12 +71,12 @@ def run_build_tools(server_name, server_version):
             log_thread.join()
 
         # Small buffer time for FS flush
-        time.sleep(0.5)
+        time.sleep(1)
 
         with open(log_path, "r") as log_file:
             log_content = log_file.read()
 
-        print(f"[Debug] Log content length: {len(log_content)}")
+        print(f"[Debug] Build attempt {attempt+1} finished. Return code: {return_code}. Log length: {len(log_content)}")
 
         if "Success! Everything completed successfully." in log_content:
             os.remove(log_path)
@@ -85,16 +85,19 @@ def run_build_tools(server_name, server_version):
         
         # Broaden the check
         failure_patterns = [
-            "Connection timeout",
-            "Could not resolve host",
-            "Connection timed out",
-            "Connection reset",
-            "An error occurred: Connection timeout error"
+            "connection timeout",
+            "could not resolve host",
+            "connection timed out",
+            "connection reset",
+            "timeout",
+            "failed to connect",
+            "error occurred: connection timeout error"
         ]
         
+        log_lower = log_content.lower()
         found_pattern = None
         for pattern in failure_patterns:
-            if pattern in log_content:
+            if pattern in log_lower:
                 found_pattern = pattern
                 break
         
@@ -102,8 +105,10 @@ def run_build_tools(server_name, server_version):
             if attempt < max_retries - 1:
                 print(f"[Debug] Match found for error pattern: '{found_pattern}'")
                 print(f"\n[System] BuildTools encountered a network error. Retrying... (Attempt {attempt+2}/{max_retries})\n")
-                time.sleep(3)
+                time.sleep(10)
                 continue
+            else:
+                print(f"[System] BuildTools failed after {max_retries} attempts due to network errors.")
         
         if "*** The version you have requested to build requires Java versions between" in log_content:
             os.system("brew install --cask oracle-jdk@" + JAVAVERSION)
@@ -111,7 +116,6 @@ def run_build_tools(server_name, server_version):
         
         # Debug output if we fail without a known cause
         print(f"[Debug] Build failed. Return code: {return_code}")
-        # print(f"[Debug] Log content excerpt: {log_content[-200:]}")
         break
 
     print("Failed to build the Spigot server. See buildtools.log for details.")
