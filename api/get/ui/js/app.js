@@ -1,0 +1,389 @@
+/* ============================================================================
+   Minecraft Server Manager — Frontend Application
+   ============================================================================ */
+
+// --- State ---
+let servers = [];
+let deleteTargetName = null;
+let refreshInterval = null;
+
+// --- API Helpers ---
+async function apiFetch(endpoint, method = 'GET', data = null) {
+    const opts = {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+    };
+    if (data) {
+        opts.body = JSON.stringify(data);
+    }
+    const resp = await fetch(endpoint, opts);
+    const json = await resp.json();
+    if (!resp.ok) {
+        throw new Error(json.error || `HTTP ${resp.status}`);
+    }
+    return json;
+}
+
+// --- Toast Notifications ---
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast toast--${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    // Remove after animation
+    setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 4000);
+}
+
+// --- Data Loading ---
+async function loadServers() {
+    try {
+        const data = await apiFetch('/api/servers');
+        servers = data.servers || [];
+        renderServers();
+        updateStats();
+    } catch (err) {
+        console.error('Failed to load servers:', err);
+    }
+}
+
+async function loadVelocityStatus() {
+    try {
+        const data = await apiFetch('/api/velocity/status');
+        const badge = document.getElementById('velocity-status');
+        const text = badge.querySelector('.status-text');
+        const btn = document.getElementById('btn-velocity-toggle');
+
+        badge.classList.remove('is-running', 'is-stopped');
+
+        if (data.running) {
+            badge.classList.add('is-running');
+            text.textContent = 'Velocity Running';
+            btn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Stop
+            `;
+        } else {
+            badge.classList.add('is-stopped');
+            text.textContent = 'Velocity Stopped';
+            btn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Start
+            `;
+        }
+    } catch (err) {
+        console.error('Failed to load Velocity status:', err);
+    }
+}
+
+// --- Rendering ---
+function renderServers() {
+    const grid = document.getElementById('servers-list');
+    const empty = document.getElementById('servers-empty');
+
+    if (servers.length === 0) {
+        grid.style.display = 'none';
+        empty.style.display = 'flex';
+        return;
+    }
+
+    grid.style.display = 'grid';
+    empty.style.display = 'none';
+
+    grid.innerHTML = servers.map((srv, i) => {
+        const status = (srv.status || 'unknown').toLowerCase();
+        const badgeClass = `badge-${status === 'running' ? 'running' : status === 'exited' ? 'exited' : status === 'not running' ? 'stopped' : 'unknown'}`;
+        const statusLabel = status === 'not running' ? 'stopped' : status;
+        const hostname = srv.hostname || '—';
+        const port = srv.port || '—';
+        const version = srv.version || '—';
+        const type = srv.type || '—';
+        const containerName = srv.container_name || `mc-${srv.name}`;
+        const isRunning = status === 'running';
+
+        return `
+            <div class="server-card" style="animation-delay: ${i * 0.06}s" id="card-${srv.name}">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <span class="card-title">${escapeHtml(srv.name)}</span>
+                        <span class="card-subtitle">${escapeHtml(containerName)}</span>
+                    </div>
+                    <span class="card-status-badge ${badgeClass}">
+                        <span class="badge-dot"></span>
+                        ${statusLabel}
+                    </span>
+                </div>
+                <div class="card-details">
+                    <div class="detail-item">
+                        <span class="detail-label">Type</span>
+                        <span class="detail-value">${escapeHtml(type)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Version</span>
+                        <span class="detail-value">${escapeHtml(version)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Port</span>
+                        <span class="detail-value">${port}</span>
+                    </div>
+                    <div class="detail-item" style="grid-column: span 2; display: flex; flex-direction: row; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span class="detail-label">Hostname</span>
+                            <span class="detail-value">${escapeHtml(hostname)}</span>
+                        </div>
+                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    ${isRunning
+                        ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                               Stop
+                           </button>`
+                        : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                               Start
+                           </button>`
+                    }
+                    <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateStats() {
+    const total = servers.length;
+    const running = servers.filter(s => s.status === 'running').length;
+    const stopped = total - running;
+
+    animateValue(document.querySelector('#stat-total .stat-value'), total);
+    animateValue(document.querySelector('#stat-running .stat-value'), running);
+    animateValue(document.querySelector('#stat-stopped .stat-value'), stopped);
+}
+
+function animateValue(el, target) {
+    const current = parseInt(el.textContent) || 0;
+    if (current === target) return;
+    el.textContent = target;
+    el.style.transform = 'scale(1.15)';
+    el.style.transition = 'transform 0.2s ease';
+    setTimeout(() => {
+        el.style.transform = 'scale(1)';
+    }, 200);
+}
+
+// --- Server Actions ---
+async function startServer(name) {
+    try {
+        showToast(`Starting ${name}...`, 'info');
+        const data = await apiFetch('/api/server/run', 'POST', { name });
+        showToast(data.message || `${name} started`, 'success');
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to start ${name}: ${err.message}`, 'error');
+    }
+}
+
+async function stopServer(name) {
+    try {
+        showToast(`Stopping ${name}...`, 'info');
+        const data = await apiFetch('/api/server/stop', 'POST', { name });
+        showToast(data.message || `${name} stopped`, 'success');
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to stop ${name}: ${err.message}`, 'error');
+    }
+}
+
+// --- Create Server ---
+function showCreateModal() {
+    document.getElementById('modal-overlay').classList.add('is-visible');
+    setTimeout(() => document.getElementById('server-name').focus(), 100);
+}
+
+function hideCreateModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('modal-overlay').classList.remove('is-visible');
+    document.getElementById('create-server-form').reset();
+}
+
+async function createServer(e) {
+    e.preventDefault();
+    const name = document.getElementById('server-name').value.trim();
+    const type = document.getElementById('server-type').value;
+    const version = document.getElementById('server-version').value.trim();
+
+    if (!name || !version) {
+        showToast('Please fill in all fields', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btn-submit-create');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating...';
+
+    try {
+        const data = await apiFetch('/api/server/create', 'POST', { name, type, version });
+        showToast(data.message || `Server '${name}' created!`, 'success');
+        hideCreateModal();
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to create server: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Create Server
+        `;
+    }
+}
+
+// --- Delete Server ---
+function showDeleteModal(name) {
+    deleteTargetName = name;
+    document.getElementById('delete-server-name').textContent = name;
+    document.getElementById('delete-remove-data').checked = false;
+    document.getElementById('delete-modal-overlay').classList.add('is-visible');
+}
+
+function hideDeleteModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('delete-modal-overlay').classList.remove('is-visible');
+    deleteTargetName = null;
+}
+
+async function confirmDelete() {
+    if (!deleteTargetName) return;
+
+    const removeData = document.getElementById('delete-remove-data').checked;
+    const btn = document.getElementById('btn-confirm-delete');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Deleting...';
+
+    try {
+        const data = await apiFetch('/api/server/delete', 'POST', {
+            name: deleteTargetName,
+            remove_data: removeData
+        });
+        showToast(data.message || `Server '${deleteTargetName}' deleted`, 'success');
+        hideDeleteModal();
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to delete: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete Server
+        `;
+    }
+}
+
+// --- Edit Hostname ---
+function showHostnameModal(name, hostname) {
+    document.getElementById('hostname-server-name').value = name;
+    document.getElementById('server-hostname').value = hostname === '—' ? '' : hostname;
+    document.getElementById('hostname-modal-overlay').classList.add('is-visible');
+    setTimeout(() => document.getElementById('server-hostname').focus(), 100);
+}
+
+function hideHostnameModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('hostname-modal-overlay').classList.remove('is-visible');
+    document.getElementById('edit-hostname-form').reset();
+}
+
+async function updateHostname(e) {
+    e.preventDefault();
+    const name = document.getElementById('hostname-server-name').value;
+    const hostname = document.getElementById('server-hostname').value.trim();
+
+    if (!name) return;
+
+    const btn = document.getElementById('btn-submit-hostname');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+    try {
+        const data = await apiFetch('/api/server/hostname', 'POST', { name, hostname });
+        showToast(data.message || `Hostname updated!`, 'success');
+        hideHostnameModal();
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to update hostname: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Save
+        `;
+    }
+}
+
+// --- Velocity Toggle ---
+async function toggleVelocity() {
+    const badge = document.getElementById('velocity-status');
+    const isRunning = badge.classList.contains('is-running');
+
+    try {
+        if (isRunning) {
+            showToast('Stopping Velocity...', 'info');
+            await apiFetch('/api/velocity/stop', 'POST');
+            showToast('Velocity stopped', 'success');
+        } else {
+            showToast('Starting Velocity...', 'info');
+            await apiFetch('/api/velocity/start', 'POST');
+            showToast('Velocity started', 'success');
+        }
+        await loadVelocityStatus();
+    } catch (err) {
+        showToast(`Velocity error: ${err.message}`, 'error');
+    }
+}
+
+// --- Utilities ---
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// --- Keyboard Shortcuts ---
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        hideCreateModal();
+        hideDeleteModal();
+        hideHostnameModal();
+    }
+    // Ctrl+N to create server
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        showCreateModal();
+    }
+});
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+    loadServers();
+    loadVelocityStatus();
+
+    // Auto-refresh every 10 seconds
+    refreshInterval = setInterval(() => {
+        loadServers();
+        loadVelocityStatus();
+    }, 10000);
+});

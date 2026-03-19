@@ -8,6 +8,7 @@ import api.post.server.run
 import api.post.server.stop
 import api.post.server.delete
 import api.post.server.owner
+import api.post.server.hostname
 import api.post.user.create
 import api.post.user.delete
 
@@ -117,6 +118,22 @@ def ApiPostServerDelete(cmd):
     response = api.post.server.delete.delete_server(server_name, remove_data=remove_data)
     return print(f"Server delete response: {response}")
 
+def ApiPostServerHostname(cmd):
+    args = cmd[len("server hostname "):].strip().split()
+    if len(args) < 2:
+        print("Usage: server hostname <server_name> <new_hostname>")
+        print("  Use 'none' to clear the hostname.")
+        return
+    
+    server_name = args[0]
+    new_hostname = args[1]
+    
+    if new_hostname.lower() == 'none':
+        new_hostname = ""
+        
+    response = api.post.server.hostname.update_hostname(server_name, new_hostname)
+    return print(response)
+
 def ApiGetServerStatus(cmd):
     args = cmd[len("server status "):].strip().split()
     if len(args) != 1:
@@ -224,6 +241,7 @@ while True:
             print("  server run <name>        - Start a server in Docker container")
             print("  server stop <name>       - Stop a server container")
             print("  server delete <name>     - Delete a server and its container")
+            print("  server hostname <n> <h>  - Update hostname for a server")
             print("  server status <name>     - Check server container status")
             print("  server console <name>    - Open RCON console")
             print("  server                   - Enter server command mode")
@@ -255,6 +273,8 @@ while True:
                         ApiPostServerStop("server " + cmd_server)
                     elif cmd_server.startswith("delete"):
                         ApiPostServerDelete("server " + cmd_server)
+                    elif cmd_server.startswith("hostname"):
+                        ApiPostServerHostname("server " + cmd_server)
                     elif cmd_server.startswith("status"):
                         ApiGetServerStatus("server " + cmd_server)
                     elif cmd_server.startswith("console"):
@@ -291,6 +311,9 @@ while True:
 
             elif cmd.startswith("server delete"):
                 ApiPostServerDelete(cmd)
+
+            elif cmd.startswith("server hostname"):
+                ApiPostServerHostname(cmd)
 
             elif cmd.startswith("server status"):
                 ApiGetServerStatus(cmd)

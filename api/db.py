@@ -238,3 +238,20 @@ def set_server_owner(server_name, owner_name):
     conn.close()
     return True, f"Owner of server '{server_name}' updated to '{owner_name}'."
 
+
+def update_server_hostname(server_name, hostname):
+    """Update a server's hostname."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM servers WHERE name = ?", (server_name,))
+    if not cursor.fetchone():
+        conn.close()
+        return False, f"Server '{server_name}' not found."
+        
+    cursor.execute("UPDATE servers SET hostname = ? WHERE name = ?", (hostname, server_name))
+    conn.commit()
+    conn.close()
+    return True, f"Hostname for server '{server_name}' updated successfully."
+

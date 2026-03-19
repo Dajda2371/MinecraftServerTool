@@ -10,7 +10,7 @@ import sys # For logging console output
 
 from api.handler import Handler  # Add this import
 
-HOST = "localhost"
+HOST = "0.0.0.0"
 PORT = 8000
 
 # # --- Logger Setup ---
@@ -83,8 +83,8 @@ if __name__ == "__main__":
         daemon_threads = True
         allow_reuse_address = True
 
-    # Define the directory to serve files from (the 'docs' folder)
-    frontend_dir = Path(__file__) / 'api' / 'get' / 'ui'
+    # Define the directory to serve files from
+    frontend_dir = Path(__file__).parent.resolve() / 'api' / 'get' / 'ui'
 
     # Create a handler that serves files from the specified directory.
     # We use functools.partial to pre-set the 'directory' argument for our Handler
