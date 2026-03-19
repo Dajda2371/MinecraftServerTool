@@ -36,7 +36,12 @@ def get_local_java_path(server_name):
 def install_local_java(server_name, version):
     print(f"Installing Java {version} locally for server '{server_name}'...")
     arch = get_arch()
-    os_name = "mac" # We know the user is on Mac from context
+    os_name = platform.system().lower()
+    if os_name == "darwin":
+        os_name = "mac"
+    elif os_name != "linux":
+        # Fallback for others, but Adoptium supports mac, linux, windows, solaris, aix
+        pass 
     
     # Use Adoptium API to get the latest download link
     api_url = f"https://api.adoptium.net/v3/binary/latest/{version}/ga/{os_name}/{arch}/jdk/hotspot/normal/eclipse"
@@ -63,6 +68,8 @@ def install_local_java(server_name, version):
         
         java_path = get_local_java_path(server_name)
         if java_path:
+            # On Linux/Unix, ensure it's executable (usually happens with tar, but let's be safe)
+            os.chmod(java_path, 0o755)
             print(f"Java {version} installed successfully at {java_path}")
             return java_path
         else:
@@ -77,18 +84,11 @@ def get_java_executable(server_name):
     if local_java:
         return local_java
     
-    # Fallback to system locations
-    if os.path.exists("/usr/bin/java"):
-        return "/usr/bin/java"
-    elif os.path.exists("/usr/local/bin/java"):
-        return "/usr/local/bin/java"
-    
-    # Try common Mac path
-    mac_java = "/Library/Java/JavaVirtualMachines/jdk-" + JAVAVERSION + ".jdk/Contents/Home/bin/java"
-    if os.path.exists(mac_java):
-        return mac_java
-        
-    return "java"
+    # If no local Java is found, install the default version into the server directory
+    new_java = install_local_java(server_name, JAVAVERSION)
+    if not new_java:
+        raise Exception(f"Failed to find or install local Java for server '{server_name}'. System-wide Java is disabled.")
+    return new_java
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
