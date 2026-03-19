@@ -125,9 +125,12 @@ function renderServers() {
     empty.style.display = 'none';
 
     grid.innerHTML = servers.map((srv, i) => {
-        const status = (srv.status || 'unknown').toLowerCase();
-        const badgeClass = `badge-${status === 'running' ? 'running' : status === 'exited' ? 'exited' : status === 'not running' ? 'stopped' : 'unknown'}`;
-        const statusLabel = status === 'not running' ? 'stopped' : status;
+        const rawStatus = (srv.status || 'unknown').toLowerCase();
+        let status = rawStatus;
+        if (status === 'not running') status = 'stopped';
+        
+        const badgeClass = `badge-${status}`;
+        const statusLabel = status;
         const hostname = srv.hostname || '—';
         const port = srv.port || '—';
         const version = srv.version || '—';
@@ -274,9 +277,10 @@ async function createServer(e) {
 
     try {
         const data = await apiFetch('/api/server/create', 'POST', { name, type, version });
-        showToast(data.message || `Server '${name}' created!`, 'success');
+        showToast(data.message || `Server '${name}' creation started!`, 'success');
         hideCreateModal();
-        await loadServers();
+        // Refresh after a short delay so the early DB entry appears
+        setTimeout(loadServers, 1000);
     } catch (err) {
         showToast(`Failed to create server: ${err.message}`, 'error');
     } finally {

@@ -258,6 +258,15 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         return "Failed to create server."
 
     elif server_type.lower() == "spigot":
+        # Insert into DB early so it shows up as "Creating" (or at least exists) in the UI
+        from api.db import update_server_info
+        update_server_info(
+            server_name, owner, "spigot", server_version, "BUILDING...",
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            forwarding_secret=forwarding_secret
+        )
+
         success, message = run_build_tools(server_name, server_version)
         if success:
             current_java = get_java_executable(server_name)

@@ -184,8 +184,14 @@ class Handler(SimpleHTTPRequestHandler):
             if user != 'admin':
                 owner = user
 
-            result = api.post.server.create.create_server(name, server_type, version, owner=owner)
-            return self._send_json(200, {"message": result})
+            import threading
+            threading.Thread(
+                target=api.post.server.create.create_server,
+                args=(name, server_type, version),
+                kwargs={"owner": owner},
+                daemon=True
+            ).start()
+            return self._send_json(202, {"message": f"Creation of '{name}' started in background."})
 
         # --- Run (start) server ---
         elif self.path == "/api/server/run":

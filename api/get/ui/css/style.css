@@ -536,9 +536,14 @@ body::before {
     color: var(--red);
 }
 
-.badge-unknown, .badge-created {
+.badge-unknown, .badge-created, .badge-not.running {
     background: var(--yellow-subtle);
     color: var(--yellow);
+}
+
+.badge-creating {
+    background: var(--accent-subtle);
+    color: var(--accent);
 }
 
 .badge-dot {

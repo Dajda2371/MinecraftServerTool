@@ -215,6 +215,15 @@ def get_server_status(server_name):
         return f"Server '{server_name}' not found in database."
 
     container_name = info.get("container_name") or f"mc-{server_name}"
+    
+    if info.get("jar_path") == "BUILDING...":
+        return {
+            "name": server_name,
+            "container": container_name,
+            "status": "CREATING",
+            "port": info.get("port"),
+            "hostname": info.get("hostname"),
+        }
 
     try:
         client = docker.from_env()
@@ -231,6 +240,15 @@ def get_server_status(server_name):
             "name": server_name,
             "container": container_name,
             "status": "not running",
+            "port": info.get("port"),
+            "hostname": info.get("hostname"),
+        }
+    except Exception as e:
+        print(f"[Docker] Error getting status for '{server_name}': {e}")
+        return {
+            "name": server_name,
+            "container": container_name,
+            "status": "UNKNOWN",
             "port": info.get("port"),
             "hostname": info.get("hostname"),
         }
