@@ -1,3 +1,4 @@
 prompt_toolkit
 mcrcon
 requests
+docker
