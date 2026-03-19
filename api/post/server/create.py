@@ -21,8 +21,8 @@ def get_arch():
     return "x64"
 
 def get_local_java_path(server_name):
-    # Search for java executable in the local jdk directory
-    jdk_dir = os.path.join("data", "servers", server_name, "jdk")
+    # Search for java executable in the local jdk directory, using absolute path
+    jdk_dir = os.path.abspath(os.path.join("data", "servers", server_name, "jdk"))
     if not os.path.exists(jdk_dir):
         return None
     
@@ -30,7 +30,7 @@ def get_local_java_path(server_name):
         if "java" in files:
             path = os.path.join(root, "java")
             if os.access(path, os.X_OK):
-                return path
+                return os.path.abspath(path)
     return None
 
 def install_local_java(server_name, version):
@@ -46,12 +46,12 @@ def install_local_java(server_name, version):
     # Use Adoptium API to get the latest download link
     api_url = f"https://api.adoptium.net/v3/binary/latest/{version}/ga/{os_name}/{arch}/jdk/hotspot/normal/eclipse"
     
-    jdk_dir = os.path.join("data", "servers", server_name, "jdk")
+    jdk_dir = os.path.abspath(os.path.join("data", "servers", server_name, "jdk"))
     if os.path.exists(jdk_dir):
         shutil.rmtree(jdk_dir)
     os.makedirs(jdk_dir, exist_ok=True)
     
-    tar_path = os.path.join("data", "servers", server_name, "jdk.tar.gz")
+    tar_path = os.path.abspath(os.path.join("data", "servers", server_name, "jdk.tar.gz"))
     
     try:
         print(f"Downloading JDK from {api_url}...")
