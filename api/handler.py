@@ -4,22 +4,41 @@ import json
 import api.post.server.create
 import api.post.server.run
 import api.post.server.stop
-import api.post.server.delete
-import api.post.server.owner
 import api.post.server.hostname
+import api.post.server.memory
+import api.post.server.delete
+import api.post.user.assign_memory
+import api.post.user.reset_password
+import api.post.user.create
+import api.post.user.delete
 import api.db
 import api.velocity
+import api.auth
 
 
 class Handler(SimpleHTTPRequestHandler):
 
-    def _send_json(self, status, data):
-        """Helper to send a JSON response."""
+    def _send_json(self, status, payload, cookies=None):
+        """Helper to send JSON response."""
+        response_body = json.dumps(payload).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Content-Length', str(len(response_body)))
+        if cookies:
+            for name, val in cookies.items():
+                if val is None:
+                    # expire cookie
+                    self.send_header('Set-Cookie', f"{name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT")
+                else:
+                    self.send_header('Set-Cookie', f"{name}={val}; Path=/; HttpOnly")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode('utf-8'))
+        self.wfile.write(response_body)
+
+    def _get_current_user(self):
+        cookies = api.auth.parse_cookies(self.headers)
+        if 'session_id' in cookies:
+            return api.auth.get_session_user(cookies['session_id'])
+        return None
 
     def _read_json(self):
         """Read and parse JSON from POST body."""
@@ -32,7 +51,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         # --- Static files ---
         if (
-            self.path in ["/", "/api.js"]
+            self.path in ["/", "/api.js", "/login.html"]
             or self.path.startswith("/assets/")
             or self.path.startswith("/js/")
             or self.path.startswith("/css/")
@@ -41,37 +60,59 @@ class Handler(SimpleHTTPRequestHandler):
                 self.path = '/index.html'
             return super().do_GET()
 
-        # --- API: List all servers ---
-        elif self.path == "/api/servers":
+        # --- API: Auth and Server Listing ---
+        elif self.path == '/api/auth/me':
+            user = self._get_current_user()
+            if not user:
+                return self._send_json(401, {"error": "Not logged in"})
+            user_info = api.db.get_user_info(user)
+            return self._send_json(200, user_info)
+            
+        elif self.path == '/api/users':
+            user = self._get_current_user()
+            if user != 'admin':
+                return self._send_json(403, {"error": "Admin required"})
+            return self._send_json(200, {"users": [api.db.get_user_info(u) for u in api.db.get_users()]})
+
+        elif self.path == '/api/servers':
+            user = self._get_current_user()
+            if not user:
+                return self._send_json(401, {"error": "Not logged in"})
+            
             servers = api.db.get_all_servers()
-            # Augment with container status
-            for srv in servers:
-                try:
-                    status_info = api.post.server.run.get_server_status(srv["name"])
-                    if isinstance(status_info, dict):
-                        srv["status"] = status_info.get("status", "unknown")
-                    else:
-                        srv["status"] = "unknown"
-                except Exception:
-                    srv["status"] = "unknown"
+            
+            # Filter servers if not admin
+            if user != 'admin':
+                servers = [s for s in servers if s['owner'] == user]
+                
+            for server in servers:
+                status = api.post.server.run.get_server_status(server["name"])
+                if isinstance(status, dict):
+                    server["status"] = status.get("status", "UNKNOWN")
+                else:
+                    server["status"] = "UNKNOWN"
             return self._send_json(200, {"servers": servers})
 
-        # --- API: Get single server ---
-        elif self.path.startswith("/api/server/"):
-            server_name = self.path.split("/api/server/")[1]
-            info = api.db.get_server_info(server_name)
-            if info:
-                try:
-                    status_info = api.post.server.run.get_server_status(server_name)
-                    if isinstance(status_info, dict):
-                        info["status"] = status_info.get("status", "unknown")
-                    else:
-                        info["status"] = "unknown"
-                except Exception:
-                    info["status"] = "unknown"
-                return self._send_json(200, info)
+        elif self.path.startswith('/api/server/'):
+            user = self._get_current_user()
+            if not user:
+                return self._send_json(401, {"error": "Not logged in"})
+                
+            name = self.path.split('/')[-1]
+            server = api.db.get_server_info(name)
+            
+            if not server:
+                return self._send_json(404, {"error": "Server not found"})
+                
+            if user != 'admin' and server['owner'] != user:
+                return self._send_json(403, {"error": "Access denied"})
+                
+            status = api.post.server.run.get_server_status(name)
+            if isinstance(status, dict):
+                server["status"] = status.get("status", "UNKNOWN")
             else:
-                return self._send_json(404, {"error": f"Server '{server_name}' not found"})
+                server["status"] = "UNKNOWN"
+            return self._send_json(200, server)
 
         # --- API: Velocity status ---
         elif self.path == "/api/velocity/status":
@@ -93,6 +134,37 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404, "Not Found")
 
     def do_POST(self):
+        """Handle POST requests (API endpoints)"""
+        
+        # --- Auth ---
+        if self.path == '/api/auth/login':
+            data = self._read_json()
+            username = data.get("username", "").strip()
+            password = data.get("password", "").strip()
+            if api.db.verify_user_password(username, password):
+                token = api.auth.create_session(username)
+                return self._send_json(200, {"message": "Success", "username": username}, cookies={'session_id': token})
+            else:
+                return self._send_json(401, {"error": "Invalid credentials"})
+                
+        elif self.path == '/api/auth/logout':
+            cookies = api.auth.parse_cookies(self.headers)
+            if 'session_id' in cookies:
+                api.auth.delete_session(cookies['session_id'])
+            return self._send_json(200, {"message": "Logged out"}, cookies={'session_id': None})
+            
+        # Ensure user is logged in for all below
+        user = self._get_current_user()
+        if not user:
+            return self._send_json(401, {"error": "Authentication required"})
+            
+        # Check permissions logic handler
+        def check_server_access(server_name):
+            if user == 'admin': return True
+            info = api.db.get_server_info(server_name)
+            if info and info['owner'] == user: return True
+            return False
+
         # --- Create server ---
         if self.path == "/api/server/create":
             data = self._read_json()
@@ -104,6 +176,14 @@ class Handler(SimpleHTTPRequestHandler):
             if not name or not version:
                 return self._send_json(400, {"error": "name and version are required"})
 
+            # Only admin can create servers for other owners
+            if user != 'admin' and owner != user:
+                return self._send_json(403, {"error": "Access denied: Cannot create server for another user"})
+            
+            # If not admin, force owner to current user
+            if user != 'admin':
+                owner = user
+
             result = api.post.server.create.create_server(name, server_type, version, owner=owner)
             return self._send_json(200, {"message": result})
 
@@ -113,6 +193,10 @@ class Handler(SimpleHTTPRequestHandler):
             name = data.get("name", "").strip()
             if not name:
                 return self._send_json(400, {"error": "name is required"})
+            
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+
             result = api.post.server.run.run_server(name)
             return self._send_json(200, {"message": result})
 
@@ -122,7 +206,11 @@ class Handler(SimpleHTTPRequestHandler):
             name = data.get("name", "").strip()
             if not name:
                 return self._send_json(400, {"error": "name is required"})
-            result = api.post.server.stop.stop_server(name)
+            
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+
+            result = api.post.server.stop.stop_server(name) 
             return self._send_json(200, {"message": result})
 
         # --- Delete server ---
@@ -132,6 +220,10 @@ class Handler(SimpleHTTPRequestHandler):
             remove_data = data.get("remove_data", False)
             if not name:
                 return self._send_json(400, {"error": "name is required"})
+            
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+
             result = api.post.server.delete.delete_server(name, remove_data=remove_data)
             return self._send_json(200, {"message": result})
 
@@ -143,23 +235,83 @@ class Handler(SimpleHTTPRequestHandler):
             if not name:
                 return self._send_json(400, {"error": "name is required"})
             
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+            
             # Allow empty string to unset hostname
             result = api.post.server.hostname.update_hostname(name, hostname)
             return self._send_json(200, {"message": result})
 
-        # --- Velocity control ---
-        elif self.path == "/api/velocity/start":
-            api.velocity.download_velocity()
-            api.velocity.start_velocity()
-            return self._send_json(200, {"message": "Velocity started"})
+        # --- Update Server Memory ---
+        elif self.path == "/api/server/memory":
+            data = self._read_json()
+            name = data.get("name", "").strip()
+            memory_mb = data.get("memory_mb")
+            
+            if not name or memory_mb is None:
+                return self._send_json(400, {"error": "name and memory_mb are required"})
+            
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+            
+            try:
+                memory_mb = int(memory_mb)
+            except ValueError:
+                return self._send_json(400, {"error": "memory_mb must be an integer"})
+                
+            result = api.post.server.memory.assign_memory(name, memory_mb, user)
+            if "Failed" in result or "exceeded" in result or "not found" in result:
+                return self._send_json(400, {"error": result})
+            else:
+                return self._send_json(200, {"message": result})
 
-        elif self.path == "/api/velocity/stop":
-            api.velocity.stop_velocity()
-            return self._send_json(200, {"message": "Velocity stopped"})
+        # --- User Management (Admin Only) ---
+        elif self.path.startswith("/api/user/"):
+            if user != 'admin':
+                return self._send_json(403, {"error": "Admin required"})
+                
+            data = self._read_json()
+            username = data.get("username", "").strip()
+            if not username:
+                return self._send_json(400, {"error": "username is required"})
+                
+            if self.path == "/api/user/add":
+                res = api.post.user.create.create_user(username)
+                return self._send_json(200, {"message": res})
+                
+            elif self.path == "/api/user/remove":
+                res = api.post.user.delete.delete_user(username)
+                return self._send_json(200, {"message": res})
+                
+            elif self.path == "/api/user/assign":
+                limit_mb = data.get("limit_mb")
+                try: limit_mb = int(limit_mb)
+                except (ValueError, TypeError): return self._send_json(400, {"error": "limit_mb must be an integer"})
+                res = api.post.user.assign_memory.assign_memory(username, limit_mb)
+                return self._send_json(200, {"message": res})
+                
+            elif self.path == "/api/user/reset":
+                new_password = data.get("new_password", "").strip()
+                res = api.post.user.reset_password.reset_password(username, new_password)
+                return self._send_json(200, {"message": res})
 
-        elif self.path == "/api/velocity/reload":
-            api.velocity.reload_velocity_config()
-            return self._send_json(200, {"message": "Velocity config reloaded"})
+        # --- Velocity control (Admin Only) ---
+        elif self.path.startswith("/api/velocity/"):
+            if user != 'admin':
+                return self._send_json(403, {"error": "Admin required"})
+                
+            if self.path == "/api/velocity/start":
+                api.velocity.download_velocity()
+                api.velocity.start_velocity()
+                return self._send_json(200, {"message": "Velocity proxy started."})
+
+            elif self.path == "/api/velocity/stop":
+                api.velocity.stop_velocity()
+                return self._send_json(200, {"message": "Velocity stopped"})
+
+            elif self.path == "/api/velocity/reload":
+                api.velocity.reload_velocity_config()
+                return self._send_json(200, {"message": "Velocity config reloaded"})
 
         else:
             return self.send_error(404, "Not Found")

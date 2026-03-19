@@ -12,9 +12,12 @@ import api.post.server.hostname
 import api.post.user.create
 import api.post.user.delete
 
+import api.post.user.assign_memory
+import api.post.user.reset_password
+import api.post.server.memory
 import api.velocity
 
-USER = "Admin"
+USER = None
 QUITCMD = ['q', 'quit', 'back', 'return']
 
 def ApiGetHelloWorld():
@@ -134,6 +137,23 @@ def ApiPostServerHostname(cmd):
     response = api.post.server.hostname.update_hostname(server_name, new_hostname)
     return print(response)
 
+def ApiPostServerMemory(cmd):
+    args = cmd[len("server memory "):].strip().split()
+    if len(args) < 2:
+        print("Usage: server memory <server_name> <memory_mb>")
+        return
+    
+    server_name = args[0]
+    try:
+        memory_mb = int(args[1])
+    except ValueError:
+        print("Memory must be an integer.")
+        return
+        
+    import api.post.server.memory
+    response = api.post.server.memory.assign_memory(server_name, memory_mb, USER)
+    return print(response)
+
 def ApiGetServerStatus(cmd):
     args = cmd[len("server status "):].strip().split()
     if len(args) != 1:
@@ -223,8 +243,60 @@ def ApiPostServerOwner(cmd):
     response = api.post.server.owner.update_owner(server_name, username)
     print(f"Server owner update response: {response}")
 
+def ApiPostUserAssignMemory(cmd):
+    args = cmd[len("user assign "):].strip().split()
+    if len(args) != 2:
+        print("Usage: user assign <username> <limit_mb>")
+        return
+    username = args[0]
+    try:
+        limit_mb = int(args[1])
+    except ValueError:
+        print("Memory must be an integer.")
+        return
+    response = api.post.user.assign_memory.assign_memory(username, limit_mb)
+    print(response)
+
+def ApiPostUserResetPassword(cmd):
+    args = cmd[len("user reset-password "):].strip().split()
+    if len(args) != 2:
+        print("Usage: user reset-password <username> <new_password>")
+        return
+    username = args[0]
+    new_password = args[1]
+    response = api.post.user.reset_password.reset_password(username, new_password)
+    print(response)
+
+def ApiUserLogin(cmd):
+    global USER
+    args = cmd[len("login "):].strip().split()
+    if len(args) == 0:
+        username = input("Username: ").strip()
+        import getpass
+        password = getpass.getpass("Password: ").strip()
+    elif len(args) == 2:
+        username = args[0]
+        password = args[1]
+    else:
+        print("Usage: login [username] [password]")
+        return
+        
+    if getattr(api.db, 'verify_user_password')(username, password):
+        USER = username
+        print(f"Successfully logged in as {username}.")
+    else:
+        print("Invalid username or password.")
+
 while True:
     try:
+        if USER is None:
+            cmd = input("Login required. Type 'login' or 'exit': ")
+            if cmd.lower() == 'exit':
+                break
+            elif cmd.startswith('login'):
+                ApiUserLogin(cmd)
+            continue
+            
         cmd = input(USER + ">> ")
         if cmd.lower() == 'exit':
             print("Exiting the program.")
@@ -242,13 +314,20 @@ while True:
             print("  server stop <name>       - Stop a server container")
             print("  server delete <name>     - Delete a server and its container")
             print("  server hostname <n> <h>  - Update hostname for a server")
+            print("  server memory <n> <mb>   - Assign memory to a server")
             print("  server status <name>     - Check server container status")
             print("  server console <name>    - Open RCON console")
-            print("  server                   - Enter server command mode")
+            print("  server owner <n> <u>     - Transfer server ownership")
+            print("  user add <name>          - Create a new user (admin only)")
+            print("  user remove <name>       - Delete a user (admin only)")
+            print("  user assign <name> <mb>  - Assign memory limit to a user (admin only)")
+            print("  user reset-password <n> <p> - Reset user password (admin only)")
+            print("  user list                - List all users")
             print("  velocity start           - Download and start Velocity proxy")
             print("  velocity stop            - Stop Velocity proxy")
             print("  velocity reload          - Reload Velocity config from DB")
             print("  velocity status          - Check Velocity process status")
+            print("  logout                   - Logout current user")
             print("  help                     - Show this help message")
             print("  exit                     - Exit the program")
 
@@ -275,6 +354,8 @@ while True:
                         ApiPostServerDelete("server " + cmd_server)
                     elif cmd_server.startswith("hostname"):
                         ApiPostServerHostname("server " + cmd_server)
+                    elif cmd_server.startswith("memory"):
+                        ApiPostServerMemory("server " + cmd_server)
                     elif cmd_server.startswith("status"):
                         ApiGetServerStatus("server " + cmd_server)
                     elif cmd_server.startswith("console"):
@@ -314,6 +395,9 @@ while True:
 
             elif cmd.startswith("server hostname"):
                 ApiPostServerHostname(cmd)
+                
+            elif cmd.startswith("server memory"):
+                ApiPostServerMemory(cmd)
 
             elif cmd.startswith("server status"):
                 ApiGetServerStatus(cmd)
@@ -354,17 +438,27 @@ while True:
                     else:
                         print("Invalid user command. Type 'back' to return.")
 
-            elif cmd.startswith("user create"):
-                ApiPostUserCreate(cmd)
+            elif cmd.startswith("user create") or cmd.startswith("user add"):
+                ApiPostUserCreate(cmd.replace("user add", "user create"))
 
-            elif cmd.startswith("user delete"):
-                ApiPostUserDelete(cmd)
+            elif cmd.startswith("user delete") or cmd.startswith("user remove"):
+                ApiPostUserDelete(cmd.replace("user remove", "user delete"))
 
             elif cmd.startswith("user list"):
                 ApiGetUserList()
+                
+            elif cmd.startswith("user assign"):
+                ApiPostUserAssignMemory(cmd)
+                
+            elif cmd.startswith("user reset-password"):
+                ApiPostUserResetPassword(cmd)
 
             else:
                 print("Invalid user command. Type 'help' for a list of commands.")
+
+        elif cmd.lower() == "logout":
+            USER = None
+            print("Logged out successfully.")
 
         elif cmd.startswith("velocity"):
             if cmd == "velocity" or cmd == "velocity help":

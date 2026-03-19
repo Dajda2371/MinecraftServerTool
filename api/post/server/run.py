@@ -118,6 +118,7 @@ def run_server(server_name):
     container_name = info.get("container_name") or f"mc-{server_name}"
     port = info.get("port") or 25566
     forwarding_secret = info.get("forwarding_secret") or ""
+    memory_mb = info.get("memory_mb") or 1024
 
     # Configure server.properties for Velocity
     configure_server_properties(server_local_path, port)
@@ -145,7 +146,12 @@ def run_server(server_name):
     jar_filename = os.path.basename(info["jar_path"]) if info.get("jar_path") else "server.jar"
 
     # Command to run inside the container
-    cmd = f"java -Xmx1024M -Xms1024M -jar {jar_filename} nogui --port {port}"
+    # Set Java heap slightly smaller than container limit to avoid OOM kills by Docker
+    java_heap = int(memory_mb * 0.8)
+    if java_heap < 512:
+        java_heap = 512
+        
+    cmd = f"java -Xmx{java_heap}M -Xms{java_heap}M -jar {jar_filename} nogui --port {port}"
 
     try:
         print(f"[Docker] Starting container '{container_name}' on internal port {port}...")
@@ -170,7 +176,7 @@ def run_server(server_name):
                 "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
             },
             # Resource limits
-            mem_limit="2g",
+            mem_limit=f"{memory_mb}m",
             # Restart policy
             restart_policy={"Name": "unless-stopped"},
         )

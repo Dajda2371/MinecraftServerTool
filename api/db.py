@@ -21,7 +21,8 @@ def init_db():
             port INTEGER DEFAULT 25565,
             hostname TEXT,
             container_name TEXT,
-            forwarding_secret TEXT
+            forwarding_secret TEXT,
+            memory_mb INTEGER DEFAULT 1024
         )
     ''')
     
@@ -36,28 +37,41 @@ def init_db():
         cursor.execute("ALTER TABLE servers ADD COLUMN container_name TEXT")
     if 'forwarding_secret' not in cols:
         cursor.execute("ALTER TABLE servers ADD COLUMN forwarding_secret TEXT")
+    if 'memory_mb' not in cols:
+        cursor.execute("ALTER TABLE servers ADD COLUMN memory_mb INTEGER DEFAULT 1024")
 
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
-            password TEXT
+            password TEXT,
+            memory_limit INTEGER DEFAULT 4096
         )
     ''')
     
-    # Check if we need to add password column to existing table (migration)
+    # Check if we need to add password and memory columns to existing table (migration)
     cursor.execute("PRAGMA table_info(users)")
     columns = [info[1] for info in cursor.fetchall()]
     if 'password' not in columns:
         cursor.execute("ALTER TABLE users ADD COLUMN password TEXT")
+    if 'memory_limit' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN memory_limit INTEGER DEFAULT 4096")
 
     # Check if users table is empty
     cursor.execute("SELECT count(*) FROM users")
     count = cursor.fetchone()[0]
     if count == 0:
-        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", ('admin', None))
-        print("Initialized default 'admin' user with no password.")
+        cursor.execute("INSERT INTO users (username, password, memory_limit) VALUES (?, ?, ?)", ('admin', None, 8192))
+        print("Initialized default 'admin' user.")
+        
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            expires_at DATETIME
+        )
+    ''')
 
     conn.commit()
     conn.close()
@@ -79,6 +93,46 @@ def set_user_password(username, password):
         conn.close()
         return False
 
+def get_user_info(username):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, memory_limit FROM users WHERE username = ?", (username,))
+    data = cursor.fetchone()
+    conn.close()
+    if data:
+        return {"username": data[0], "memory_limit": data[1]}
+    return None
+
+def update_user_memory(username, limit_mb):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET memory_limit = ? WHERE username = ?", (limit_mb, username))
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+def verify_user_password(username, password):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+    data = cursor.fetchone()
+    conn.close()
+    
+    if data:
+        stored_password = data[0]
+        # For simplicity, using plain text representation or hashing. 
+        # In this tool setting password function didn't hash previously. 
+        # We will check if it matches literally or both are none/empty.
+        if password == stored_password:
+            return True
+        elif not stored_password and not password:
+            return True
+    return False
+
 def generate_forwarding_secret():
     """Generate a random forwarding secret for Velocity modern forwarding."""
     return secrets.token_hex(16)
@@ -88,8 +142,8 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Check if exists
-    cursor.execute("SELECT id, port, hostname, container_name, forwarding_secret FROM servers WHERE name = ?", (name,))
+# Check if exists
+    cursor.execute("SELECT id, port, hostname, container_name, forwarding_secret, memory_mb FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
     
     if data:
@@ -98,6 +152,7 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
         new_hostname = hostname if hostname is not None else data[2]
         new_container = container_name if container_name is not None else data[3]
         new_secret = forwarding_secret if forwarding_secret is not None else data[4]
+        # Note: memory update logic might go here later.
         cursor.execute('''
             UPDATE servers 
             SET owner = ?, type = ?, version = ?, jar_path = ?, port = ?,
@@ -132,7 +187,7 @@ def get_server_info(name):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret FROM servers WHERE name = ?", (name,))
+    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
     conn.close()
     if data:
@@ -145,7 +200,8 @@ def get_server_info(name):
             "port": data[5],
             "hostname": data[6],
             "container_name": data[7],
-            "forwarding_secret": data[8]
+            "forwarding_secret": data[8],
+            "memory_mb": data[9]
         }
     return None
 
@@ -154,7 +210,7 @@ def get_all_servers():
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret FROM servers")
+    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb FROM servers")
     rows = cursor.fetchall()
     conn.close()
     servers = []
@@ -168,7 +224,8 @@ def get_all_servers():
             "port": data[5],
             "hostname": data[6],
             "container_name": data[7],
-            "forwarding_secret": data[8]
+            "forwarding_secret": data[8],
+            "memory_mb": data[9]
         })
     return servers
 
@@ -254,4 +311,16 @@ def update_server_hostname(server_name, hostname):
     conn.commit()
     conn.close()
     return True, f"Hostname for server '{server_name}' updated successfully."
+
+def update_server_memory(server_name, memory_mb):
+    """Update a server's memory allocation."""
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE servers SET memory_mb = ? WHERE name = ?", (memory_mb, server_name))
+    ok = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
 

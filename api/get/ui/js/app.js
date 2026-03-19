@@ -6,6 +6,7 @@
 let servers = [];
 let deleteTargetName = null;
 let refreshInterval = null;
+let currentUser = null;
 
 // --- API Helpers ---
 async function apiFetch(endpoint, method = 'GET', data = null) {
@@ -18,10 +19,40 @@ async function apiFetch(endpoint, method = 'GET', data = null) {
     }
     const resp = await fetch(endpoint, opts);
     const json = await resp.json();
+    if (resp.status === 401 && endpoint !== '/api/auth/login' && endpoint !== '/api/auth/me') {
+        window.location.href = '/login.html';
+        throw new Error('Please log in.');
+    }
     if (!resp.ok) {
         throw new Error(json.error || `HTTP ${resp.status}`);
     }
     return json;
+}
+
+// --- Auth ---
+async function checkAuth() {
+    try {
+        currentUser = await apiFetch('/api/auth/me');
+        document.getElementById('current-user-badge').textContent = currentUser.username;
+        if (currentUser.username === 'admin') {
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'inline-flex');
+        } else {
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        }
+        await loadServers();
+        if (currentUser.username === 'admin') {
+            await loadVelocityStatus();
+        }
+    } catch (err) {
+        window.location.href = '/login.html';
+    }
+}
+
+async function handleLogout() {
+    try {
+        await apiFetch('/api/auth/logout', 'POST');
+    } catch(e) {}
+    window.location.href = '/login.html';
 }
 
 // --- Toast Notifications ---
@@ -101,6 +132,7 @@ function renderServers() {
         const port = srv.port || '—';
         const version = srv.version || '—';
         const type = srv.type || '—';
+        const memory = srv.memory_mb || 1024;
         const containerName = srv.container_name || `mc-${srv.name}`;
         const isRunning = status === 'running';
 
@@ -135,6 +167,15 @@ function renderServers() {
                             <span class="detail-value">${escapeHtml(hostname)}</span>
                         </div>
                         <button class="btn btn-icon" style="opacity: 0.6;" onclick="showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                    </div>
+                    <div class="detail-item" style="grid-column: span 2; display: flex; flex-direction: row; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span class="detail-label">RAM Limit</span>
+                            <span class="detail-value">${memory} MB</span>
+                        </div>
+                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="showMemoryModal('${escapeAttr(srv.name)}', ${memory})">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
                     </div>
@@ -362,12 +403,135 @@ function escapeAttr(str) {
     return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
+// --- Memory Editing ---
+function showMemoryModal(name, memory) {
+    document.getElementById('memory-server-name').value = name;
+    document.getElementById('server-memory-mb').value = memory;
+    document.getElementById('memory-modal-overlay').classList.add('is-visible');
+    setTimeout(() => document.getElementById('server-memory-mb').focus(), 100);
+}
+
+function hideMemoryModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('memory-modal-overlay').classList.remove('is-visible');
+    document.getElementById('edit-memory-form').reset();
+}
+
+async function updateMemory(e) {
+    e.preventDefault();
+    const name = document.getElementById('memory-server-name').value;
+    const memory_mb = document.getElementById('server-memory-mb').value;
+
+    if (!name) return;
+
+    const btn = document.getElementById('btn-submit-memory');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+    try {
+        const data = await apiFetch('/api/server/memory', 'POST', { name, memory_mb: parseInt(memory_mb) });
+        showToast(data.message || `Memory updated!`, 'success');
+        hideMemoryModal();
+        await loadServers();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `Save limit`;
+    }
+}
+
+// --- Users Admin ---
+async function showUsersModal() {
+    document.getElementById('users-modal-overlay').classList.add('is-visible');
+    await loadUsersList();
+}
+
+function hideUsersModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('users-modal-overlay').classList.remove('is-visible');
+}
+
+async function loadUsersList() {
+    try {
+        const data = await apiFetch('/api/users');
+        const container = document.getElementById('users-list-container');
+        container.innerHTML = data.users.map(u => `
+            <div style="padding: 1rem; border-bottom: 1px solid var(--border-default); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>${escapeHtml(u.username)}</strong>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">Memory Limit: ${u.memory_limit} MB</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-ghost" onclick="assignUserMemory('${escapeAttr(u.username)}')">Set RAM</button>
+                    ${u.username !== 'admin' ? `
+                        <button class="btn btn-sm btn-ghost" onclick="resetUserPass('${escapeAttr(u.username)}')">Pasword</button>
+                        <button class="btn btn-sm btn-danger" onclick="removeUser('${escapeAttr(u.username)}')">Del</button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function addUser() {
+    const input = document.getElementById('new-username');
+    const username = input.value.trim();
+    if (!username) return;
+    try {
+        await apiFetch('/api/user/add', 'POST', { username });
+        showToast(`User ${username} added. Password is 'password'.`, 'success');
+        input.value = '';
+        await loadUsersList();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function removeUser(username) {
+    if (!confirm(`Are you sure you want to delete user ${username}?`)) return;
+    try {
+        await apiFetch('/api/user/remove', 'POST', { username });
+        showToast(`User ${username} deleted.`, 'success');
+        await loadUsersList();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function assignUserMemory(username) {
+    const limit = prompt(`Enter memory limit (MB) for ${username}:`, "8192");
+    if (!limit) return;
+    try {
+        await apiFetch('/api/user/assign', 'POST', { username, limit_mb: parseInt(limit) });
+        showToast(`Memory limit updated for ${username}.`, 'success');
+        await loadUsersList();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+async function resetUserPass(username) {
+    const pwd = prompt(`Enter new password for ${username}:`);
+    if (!pwd) return;
+    try {
+        await apiFetch('/api/user/reset', 'POST', { username, new_password: pwd });
+        showToast(`Password updated for ${username}.`, 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
 // --- Keyboard Shortcuts ---
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         hideCreateModal();
         hideDeleteModal();
         hideHostnameModal();
+        hideMemoryModal();
+        hideUsersModal();
     }
     // Ctrl+N to create server
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
@@ -378,12 +542,15 @@ document.addEventListener('keydown', (e) => {
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
-    loadServers();
-    loadVelocityStatus();
+    checkAuth();
 
     // Auto-refresh every 10 seconds
     refreshInterval = setInterval(() => {
-        loadServers();
-        loadVelocityStatus();
+        if (currentUser) {
+            loadServers();
+            if (currentUser.username === 'admin') {
+                loadVelocityStatus();
+            }
+        }
     }, 10000);
 });
