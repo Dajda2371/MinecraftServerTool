@@ -1,52 +1,75 @@
-# Base image with Python 3.13
+# ============================================================================
+# Management Container Dockerfile
+# ============================================================================
+# This container runs TWO services:
+#   1. The MinecraftServerTool (Python web server + CLI for managing servers)
+#   2. Velocity proxy (Java-based, routes player connections by hostname)
+#
+# It also needs Docker CLI access to spawn child server containers.
+# ============================================================================
+
 FROM python:3.13-slim-bookworm
 
-# Install system dependencies
-# git is required for BuildTools
-# wget is required for downloading BuildTools/Jars
-# openjdk-17-jdk or similar is often needed for various MC versions,
-# but our tool uses Java 25. Since OpenJDK 25 isn't in default repos yet,
-# we'll install it as specified in our earlier tasks or use a compatible one.
-# For simplicity, we'll install basic dependencies and the desired Java.
-
+# ---- System Dependencies ----
 RUN apt-get update && apt-get install -y \
     wget \
     git \
     screen \
     procps \
     curl \
+    supervisor \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Docker CLI (to interact with host docker)
+# ---- Docker CLI (to control sibling containers via mounted socket) ----
 RUN curl -fsSL https://get.docker.com | sh
 
-# Install OpenJDK 25 (manually since it's very new)
-# Our script currently downloads oracle-jdk@25 or expects it in a path.
-# Inside a container, we'll just install it once.
+# ---- Java for Velocity proxy + BuildTools ----
+# Install OpenJDK 21 from Adoptium (stable, works for Velocity and MC 1.20.4+)
 RUN mkdir -p /usr/lib/jvm && \
-    wget https://download.oracle.com/java/25/latest/jdk-25_linux-x64_bin.tar.gz && \
-    tar -xzf jdk-25_linux-x64_bin.tar.gz -C /usr/lib/jvm && \
-    rm jdk-25_linux-x64_bin.tar.gz
+    ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
+        JDK_ARCH="aarch64"; \
+    else \
+        JDK_ARCH="x64"; \
+    fi && \
+    wget -q "https://api.adoptium.net/v3/binary/latest/21/ga/linux/${JDK_ARCH}/jdk/hotspot/normal/eclipse" -O /tmp/jdk.tar.gz && \
+    tar -xzf /tmp/jdk.tar.gz -C /usr/lib/jvm && \
+    rm /tmp/jdk.tar.gz
 
-# Find the exact directory name created (usually jdk-25.x.x)
-RUN export JAVA_HOME=$(ls -d /usr/lib/jvm/jdk-25*) && \
-    ln -s "$JAVA_HOME/bin/java" /usr/bin/java && \
-    ln -s "$JAVA_HOME/bin/javac" /usr/bin/javac
+# Set JAVA_HOME and add to PATH
+RUN export JAVA_HOME=$(ls -d /usr/lib/jvm/jdk-21*) && \
+    ln -sf "$JAVA_HOME/bin/java" /usr/bin/java && \
+    ln -sf "$JAVA_HOME/bin/javac" /usr/bin/javac && \
+    ln -sf "$JAVA_HOME/bin/jar" /usr/bin/jar
 
+# Also install Java 25 for BuildTools (latest MC versions may need it)
+RUN wget -q https://download.oracle.com/java/25/latest/jdk-25_linux-x64_bin.tar.gz -O /tmp/jdk25.tar.gz && \
+    tar -xzf /tmp/jdk25.tar.gz -C /usr/lib/jvm && \
+    rm /tmp/jdk25.tar.gz || true
+
+# ---- Application Setup ----
 WORKDIR /app
 
-# Copy requirement files first for better caching
+# Copy requirements first for better Docker layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy the application code
 COPY . .
 
-# Ensure data directory exists
-RUN mkdir -p data/servers
+# Ensure data directories exist
+RUN mkdir -p data/servers data/velocity
 
-# Expose web interface port
+# ---- Supervisor Configuration ----
+# Supervisor runs both the Python webserver and Velocity proxy
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# ---- Ports ----
+# 25565 = Velocity proxy (the ONLY port exposed to players)
+# 8000  = Web management interface (optional, for admin access)
+EXPOSE 25565
 EXPOSE 8000
 
-# Start command (runs webserver by default, or you can override with CLI)
-CMD ["python", "webserver.py"]
+# ---- Entrypoint ----
+# Use supervisor to manage both processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

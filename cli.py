@@ -5,9 +5,13 @@ import api.get.user.list
 import api.post.server.create
 import api.post.server.rebuild
 import api.post.server.run
+import api.post.server.stop
+import api.post.server.delete
 import api.post.server.owner
 import api.post.user.create
 import api.post.user.delete
+
+import api.velocity
 
 USER = "Admin"
 QUITCMD = ['q', 'quit', 'back', 'return']
@@ -81,6 +85,83 @@ def ApiPostServerRun(cmd):
     response = api.post.server.run.run_server(server_name)
     return print(f"Server run response: {response}")
 
+def ApiPostServerStop(cmd):
+    args = cmd[len("server stop "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            server_name = input("Enter server name to stop: ").strip()
+            if server_name == '':
+                print("Server name cannot be empty.")
+                continue
+            args = [server_name]
+    else:
+        server_name = args[0]
+    response = api.post.server.stop.stop_server(server_name)
+    return print(f"Server stop response: {response}")
+
+def ApiPostServerDelete(cmd):
+    args = cmd[len("server delete "):].strip().split()
+    if len(args) < 1:
+        server_name = input("Enter server name to delete: ").strip()
+        if server_name == '':
+            print("Server name cannot be empty.")
+            return
+    else:
+        server_name = args[0]
+    
+    remove_data = False
+    confirm = input(f"Delete server '{server_name}'? Also remove data? (y/n): ").strip().lower()
+    if confirm == 'y':
+        remove_data = True
+    
+    response = api.post.server.delete.delete_server(server_name, remove_data=remove_data)
+    return print(f"Server delete response: {response}")
+
+def ApiGetServerStatus(cmd):
+    args = cmd[len("server status "):].strip().split()
+    if len(args) != 1:
+        while len(args) != 1:
+            server_name = input("Enter server name for status: ").strip()
+            if server_name == '':
+                print("Server name cannot be empty.")
+                continue
+            args = [server_name]
+    else:
+        server_name = args[0]
+    status = api.post.server.run.get_server_status(server_name)
+    if isinstance(status, dict):
+        print(f"  Name:      {status['name']}")
+        print(f"  Container: {status['container']}")
+        print(f"  Status:    {status['status']}")
+        print(f"  Port:      {status['port']}")
+        print(f"  Hostname:  {status['hostname']}")
+    else:
+        print(status)
+
+def ApiVelocityStart():
+    api.velocity.download_velocity()
+    api.velocity.start_velocity()
+
+def ApiVelocityStop():
+    api.velocity.stop_velocity()
+
+def ApiVelocityReload():
+    api.velocity.reload_velocity_config()
+
+def ApiVelocityStatus():
+    import os
+    pid_file = api.velocity.VELOCITY_PID_FILE
+    if os.path.exists(pid_file):
+        with open(pid_file, "r") as f:
+            pid = f.read().strip()
+        try:
+            os.kill(int(pid), 0)
+            print(f"Velocity is running (PID {pid}).")
+        except ProcessLookupError:
+            print("Velocity PID file exists but process is not running.")
+    else:
+        print("Velocity is not running.")
+
 def ApiPostUserCreate(cmd):
     args = cmd[len("user create "):].strip().split()
     if len(args) != 1:
@@ -138,9 +219,18 @@ while True:
         elif cmd == "help":
             print("Available commands:")
             print("  helloworld               - Get a hello world message")
-            print("  server create <name> <ip> - Create a new server")
+            print("  server create <name> <type> <version> - Create a new server")
             print("  server rebuild <name>    - Rebuild a server and update info")
+            print("  server run <name>        - Start a server in Docker container")
+            print("  server stop <name>       - Stop a server container")
+            print("  server delete <name>     - Delete a server and its container")
+            print("  server status <name>     - Check server container status")
+            print("  server console <name>    - Open RCON console")
             print("  server                   - Enter server command mode")
+            print("  velocity start           - Download and start Velocity proxy")
+            print("  velocity stop            - Stop Velocity proxy")
+            print("  velocity reload          - Reload Velocity config from DB")
+            print("  velocity status          - Check Velocity process status")
             print("  help                     - Show this help message")
             print("  exit                     - Exit the program")
 
@@ -161,12 +251,12 @@ while True:
                         ApiPostServerRebuild("server " + cmd_server)
                     elif cmd_server.startswith("run"):
                         ApiPostServerRun("server " + cmd_server)
-                    # elif cmd_server.startswith("stop"):
-                    #     ApiPostServerStop("server " + cmd_server)
-                    # elif cmd_server.startswith("restart"):
-                    #     ApiPostServerRestart("server " + cmd_server)
-                    # elif cmd_server.startswith("status"):
-                    #     ApiGetServerStatus("server " + cmd_server)
+                    elif cmd_server.startswith("stop"):
+                        ApiPostServerStop("server " + cmd_server)
+                    elif cmd_server.startswith("delete"):
+                        ApiPostServerDelete("server " + cmd_server)
+                    elif cmd_server.startswith("status"):
+                        ApiGetServerStatus("server " + cmd_server)
                     elif cmd_server.startswith("console"):
                         ApiGetServerConsole("server " + cmd_server)
                     elif cmd_server.startswith("owner"):
@@ -195,6 +285,15 @@ while True:
 
             elif cmd.startswith("server run"):
                 ApiPostServerRun(cmd)
+
+            elif cmd.startswith("server stop"):
+                ApiPostServerStop(cmd)
+
+            elif cmd.startswith("server delete"):
+                ApiPostServerDelete(cmd)
+
+            elif cmd.startswith("server status"):
+                ApiGetServerStatus(cmd)
 
             elif cmd.startswith("server console"):
                 ApiGetServerConsole(cmd)
@@ -243,6 +342,24 @@ while True:
 
             else:
                 print("Invalid user command. Type 'help' for a list of commands.")
+
+        elif cmd.startswith("velocity"):
+            if cmd == "velocity" or cmd == "velocity help":
+                print("Velocity commands:")
+                print("  velocity start   - Download and start Velocity proxy")
+                print("  velocity stop    - Stop Velocity proxy")
+                print("  velocity reload  - Reload Velocity config from DB")
+                print("  velocity status  - Check Velocity process status")
+            elif cmd == "velocity start":
+                ApiVelocityStart()
+            elif cmd == "velocity stop":
+                ApiVelocityStop()
+            elif cmd == "velocity reload":
+                ApiVelocityReload()
+            elif cmd == "velocity status":
+                ApiVelocityStatus()
+            else:
+                print("Invalid velocity command. Type 'velocity help'.")
 
         else:
             print("Invalid command. Please try again.")

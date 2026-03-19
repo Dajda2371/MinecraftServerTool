@@ -1,12 +1,50 @@
+# ============================================================================
+# Docker Compose — Minecraft Server Infrastructure
+# ============================================================================
+#
+# Architecture:
+#   - mc-tool (Management Container):
+#       • Runs the MinecraftServerTool (Python web server + CLI)
+#       • Runs Velocity proxy (hostname-based routing on port 25565)
+#       • Spawns child containers via Docker socket
+#
+#   - Child containers (NOT defined here — spawned dynamically by mc-tool):
+#       • One per Minecraft server
+#       • Connected to mc-net only
+#       • No published ports
+#
+# Network:
+#   - mc-net: Internal Docker network connecting all containers
+#   - Only port 25565 is exposed to the host (Velocity proxy)
+#
+# DNS:
+#   - Each subdomain (e.g., survival.mc.example.com) must point to host IP
+#   - Players connect to hostname:25565, Velocity routes to correct backend
+#
+# ============================================================================
+
 services:
   mc-tool:
     build: .
     container_name: minecraft-server-tool
     ports:
+      # Velocity proxy — the ONLY port players connect to
+      - "25565:25565"
+      # Web management interface (admin only, optional)
       - "8000:8000"
     volumes:
+      # Docker socket — allows mc-tool to create/control child containers
       - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent data (database, server files, Velocity config)
       - ./data:/app/data
     environment:
+      # Host-side path for Docker-out-of-Docker volume mounts
       - MC_HOST_DATA_DIR=${PWD}/data
+    networks:
+      - mc-net
     restart: unless-stopped
+
+networks:
+  mc-net:
+    name: mc-net
+    driver: bridge

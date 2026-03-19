@@ -216,10 +216,32 @@ def run_build_tools(server_name, server_version):
     print("Failed to build the Spigot server. See buildtools.log for details.")
     return False, "Failed to create server."
 
-def create_server(server_name, server_type, server_version, owner="admin"):
+def create_server(server_name, server_type, server_version, owner="admin", hostname=None):
+    """
+    Create a new Minecraft server.
+    
+    Args:
+        server_name: Unique name for the server
+        server_type: Server type (spigot, vanilla, paper)
+        server_version: Minecraft version (e.g., "1.21.1")
+        owner: Owner username
+        hostname: Optional hostname for Velocity routing (e.g., "survival.mc.davidbenes.cz")
+    """
     print("creating server...")
     os.makedirs(f"data/servers/{server_name}", exist_ok=True)
     
+    # Generate hostname from config if not provided
+    if hostname is None:
+        try:
+            from config import MC_SUBDOMAIN
+            hostname = f"{server_name}.{MC_SUBDOMAIN}"
+        except ImportError:
+            hostname = f"{server_name}.mc.localhost"
+
+    # Generate Velocity forwarding secret
+    from api.db import generate_forwarding_secret
+    forwarding_secret = generate_forwarding_secret()
+
     IsWgetInstalled = subprocess.run(
         ["which", "wget"],
         capture_output=True,
@@ -232,9 +254,6 @@ def create_server(server_name, server_type, server_version, owner="admin"):
         return "Failed to create server."
     
     if server_type.lower() == "vanilla":
-        # os.system("cd data/servers/" + server_name + " && wget https://launcher.mojang.com/v1/objects/" + server_version + "/server.jar")
-        # print(f"Vanilla server '{server_name}' created with version {server_version}.")
-        # return f"Server '{server_name}' created successfully."
         print("Vanilla server creation is not implemented yet.")
         return "Failed to create server."
 
@@ -244,25 +263,48 @@ def create_server(server_name, server_type, server_version, owner="admin"):
             current_java = get_java_executable(server_name)
             os.system(f'echo "{current_java} -Xmx{RAMUSAGE} -Xms{RAMUSAGE} -jar spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar nogui" >> data/servers/{server_name}/start.sh')
             os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
-            os.system(f'echo "enable-rcon=true\nrcon.password=admin\nrcon.port=25575" > data/servers/{server_name}/server.properties')
+            
+            # Write server.properties with online-mode=false for Velocity
+            server_props = (
+                "enable-rcon=true\n"
+                "rcon.password=admin\n"
+                "rcon.port=25575\n"
+                "online-mode=false\n"
+            )
+            with open(f"data/servers/{server_name}/server.properties", "w") as f:
+                f.write(server_props)
+
+            # Write Velocity modern forwarding config
+            paper_config_dir = f"data/servers/{server_name}/config"
+            os.makedirs(paper_config_dir, exist_ok=True)
+            paper_global = (
+                "proxies:\n"
+                "  velocity:\n"
+                "    enabled: true\n"
+                "    online-mode: true\n"
+                f'    secret: "{forwarding_secret}"\n'
+            )
+            with open(f"{paper_config_dir}/paper-global.yml", "w") as f:
+                f.write(paper_global)
             
             full_jar_path = f"data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar"
-            update_server_info(server_name, owner, "spigot", server_version, full_jar_path)
+            container_name = f"mc-{server_name}"
+            
+            update_server_info(
+                server_name, owner, "spigot", server_version, full_jar_path,
+                hostname=hostname,
+                container_name=container_name,
+                forwarding_secret=forwarding_secret,
+            )
             
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
+            print(f"  Hostname: {hostname}")
+            print(f"  Container: {container_name}")
+            print(f"  Online-mode: false (Velocity handles auth)")
             return f"Server '{server_name}' created successfully."
         else:
             return message
 
-    # elif server_type.lower() == "paper":
-    #     if "not found" in IsWgetInstalled.stdout:
-    #         print("wget is not installed. Please install wget to proceed.")
-    #         print('run "brew install wget" (macOS) or "sudo apt-get install wget" (Linux) to install wget')
-    #         return "Failed to create server."
-    #     else:
-    #         os.system("cd data/servers/" + server_name + " && wget https://papermc.io/api/v2/projects/paper/versions/" + server_version + "/builds/" + server_version + "/downloads/paper-" + server_version + ".jar")
-    #         print("Downloaded Paper.jar successfully.")
-    # 
     else:
         print(f"Server type '{server_type}' is not supported yet.")
     return

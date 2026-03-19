@@ -1,0 +1,29 @@
+# ============================================================================
+# Child Server Container Dockerfile
+# ============================================================================
+# Base image for individual Minecraft server containers.
+# Each server gets its own isolated container with:
+#   - Non-root user running the server process
+#   - Data volume mounted at /data for world persistence
+#   - No published ports (only reachable via mc-net → Velocity)
+# ============================================================================
+
+FROM openjdk:21-jre-slim
+
+# Create a non-root user for running the Minecraft server
+RUN groupadd -g 1000 minecraft && \
+    useradd -m -u 1000 -g 1000 minecraft
+
+# Set working directory to /data where the server files are mounted
+WORKDIR /data
+
+# Change ownership of /data to the minecraft user
+RUN chown minecraft:minecraft /data
+
+# Switch to non-root user
+USER minecraft
+
+# Default entrypoint — can be overridden at container creation time
+# The actual command is provided by the management tool when spawning
+ENTRYPOINT ["java"]
+CMD ["-Xmx1024M", "-Xms1024M", "-jar", "server.jar", "nogui"]

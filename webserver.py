@@ -66,6 +66,19 @@ PORT = 8000
 if __name__ == "__main__":
     print("--- Starting Webserver ---")
 
+    # Initialize database on startup
+    from api.db import init_db
+    init_db()
+
+    # Generate Velocity config (so supervisor can start Velocity with up-to-date config)
+    try:
+        from api.velocity import generate_velocity_toml, download_velocity
+        download_velocity()
+        generate_velocity_toml()
+        print("[Startup] Velocity configuration generated.")
+    except Exception as e:
+        print(f"[Startup] Warning: Could not generate Velocity config: {e}")
+
     class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True
         allow_reuse_address = True
