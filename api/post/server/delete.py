@@ -24,19 +24,20 @@ def delete_server(server_name, remove_data=False):
 
     container_name = info.get("container_name") or f"mc-{server_name}"
 
-    # Stop and remove Docker container
-    try:
-        client = docker.from_env()
-        container = client.containers.get(container_name)
-        if container.status == "running":
-            print(f"[Docker] Stopping container '{container_name}'...")
-            container.stop(timeout=30)
-        print(f"[Docker] Removing container '{container_name}'...")
-        container.remove()
-    except docker.errors.NotFound:
-        print(f"[Docker] Container '{container_name}' not found (already removed).")
-    except Exception as e:
-        print(f"[Docker] Warning: Could not remove container: {e}")
+    # Stop and remove Docker containers (server + any stale build container)
+    client = docker.from_env()
+    for name in [container_name, f"mc-build-{server_name}"]:
+        try:
+            ctr = client.containers.get(name)
+            if ctr.status == "running":
+                print(f"[Docker] Stopping container '{name}'...")
+                ctr.stop(timeout=30)
+            print(f"[Docker] Removing container '{name}'...")
+            ctr.remove()
+        except docker.errors.NotFound:
+            print(f"[Docker] Container '{name}' not found (already removed).")
+        except Exception as e:
+            print(f"[Docker] Warning: Could not remove container '{name}': {e}")
 
     # Remove from database
     db_delete_server(server_name)

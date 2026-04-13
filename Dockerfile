@@ -13,7 +13,6 @@ FROM python:3.13-bookworm
 # ---- System Dependencies ----
 RUN apt-get update && apt-get install -y \
     wget \
-    git \
     screen \
     procps \
     curl \
@@ -23,8 +22,8 @@ RUN apt-get update && apt-get install -y \
 # ---- Docker CLI (to control sibling containers via mounted socket) ----
 RUN curl -fsSL https://get.docker.com | sh
 
-# ---- Java for Velocity proxy + BuildTools ----
-# Install OpenJDK 21 from Adoptium (stable, works for Velocity and MC 1.20.4+)
+# ---- Java for Velocity proxy ----
+# Install OpenJDK 21 from Adoptium (stable, works for Velocity)
 RUN mkdir -p /usr/lib/jvm && \
     ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
@@ -41,11 +40,6 @@ RUN export JAVA_HOME=$(ls -d /usr/lib/jvm/jdk-21*) && \
     ln -sf "$JAVA_HOME/bin/java" /usr/bin/java && \
     ln -sf "$JAVA_HOME/bin/javac" /usr/bin/javac && \
     ln -sf "$JAVA_HOME/bin/jar" /usr/bin/jar
-
-# Also install Java 25 for BuildTools (latest MC versions may need it)
-RUN wget -q https://download.oracle.com/java/25/latest/jdk-25_linux-x64_bin.tar.gz -O /tmp/jdk25.tar.gz && \
-    tar -xzf /tmp/jdk25.tar.gz -C /usr/lib/jvm && \
-    rm /tmp/jdk25.tar.gz || true
 
 # ---- Application Setup ----
 WORKDIR /app
