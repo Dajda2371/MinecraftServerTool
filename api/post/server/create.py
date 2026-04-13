@@ -57,7 +57,9 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
     server_host_path = os.path.join(host_data_path, "servers", server_name)
     maven_cache_path = os.path.join(host_data_path, ".buildtools-cache", "m2")
+    repo_cache_path = os.path.join(host_data_path, ".buildtools-cache", "repos")
     os.makedirs(maven_cache_path, exist_ok=True)
+    os.makedirs(repo_cache_path, exist_ok=True)
     log_path = os.path.join("data", "servers", server_name, "buildtools.log")
     container_name = f"mc-build-{server_name}"
     image = f"eclipse-temurin:{java_version}-jdk"
@@ -81,7 +83,15 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     command = (
         f'bash -c "'
         f"apt-get update -qq && apt-get install -y -qq git && "
+        f"for repo in Bukkit CraftBukkit Spigot BuildData; do "
+        f"if [ ! -d /data/\\$repo ] && [ -d /cache/\\$repo ]; then "
+        f"cp -a /cache/\\$repo /data/\\$repo; "
+        f"fi; done && "
         f"java -Xmx{java_heap}m -jar {BUILDTOOLSJAR} --rev {server_version} --compile-if-changed 2>&1 | tee /data/buildtools.log && "
+        f"for repo in Bukkit CraftBukkit Spigot BuildData; do "
+        f"if [ -d /data/\\$repo ]; then "
+        f"rm -rf /cache/\\$repo && cp -a /data/\\$repo /cache/\\$repo; "
+        f"fi; done && "
         f'chown -R 1000:1000 /data"'
     )
 
@@ -93,6 +103,7 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         volumes={
             server_host_path: {"bind": "/data", "mode": "rw"},
             maven_cache_path: {"bind": "/root/.m2", "mode": "rw"},
+            repo_cache_path: {"bind": "/cache", "mode": "rw"},
         },
         environment={
             "MAVEN_OPTS": f"-Xmx{java_heap}m",
