@@ -13,6 +13,42 @@ LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
 DEFAULT_BUILD_JAVA = "21"
 
+VANILLA_GIST_URL = "https://gist.githubusercontent.com/cliffano/77a982a7503669c3e1acb0a0cf6127e9/raw/minecraft-server-jar-downloads.md"
+
+
+def fetch_vanilla_jar_url(version):
+    """Fetch the vanilla server JAR download URL for a given Minecraft version from the gist."""
+    print(f"Fetching vanilla JAR URL for version {version}...")
+    response = requests.get(VANILLA_GIST_URL)
+    response.raise_for_status()
+
+    for line in response.text.splitlines():
+        line = line.strip()
+        if not line.startswith("|") or "---" in line or "Server Jar" in line:
+            continue
+        cols = [c.strip() for c in line.split("|")]
+        # cols: ['', version, server_url, client_url, '']
+        if len(cols) >= 4 and cols[1] == version:
+            return cols[2]
+
+    raise ValueError(f"Version '{version}' not found in vanilla JAR manifest.")
+
+
+def download_vanilla_jar(server_name, version):
+    """Download the vanilla server JAR for the given version."""
+    url = fetch_vanilla_jar_url(version)
+    jar_name = f"vanilla-{version}.jar"
+    target = f"data/servers/{server_name}/{jar_name}"
+
+    print(f"Downloading vanilla server JAR from {url}...")
+    response = requests.get(url, stream=True)
+    response.raise_for_status()
+    with open(target, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+    print(f"Downloaded {jar_name} successfully.")
+    return jar_name
+
 
 def follow_log_file(path, stop_event):
     try:
@@ -248,8 +284,47 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
     forwarding_secret = generate_forwarding_secret()
 
     if server_type.lower() == "vanilla":
-        print("Vanilla server creation is not implemented yet.")
-        return "Failed to create server."
+        update_server_info(
+            server_name, owner, "vanilla", server_version, "DOWNLOADING...",
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            forwarding_secret=forwarding_secret,
+            memory_mb=memory_mb
+        )
+
+        try:
+            jar_name = download_vanilla_jar(server_name, server_version)
+        except Exception as e:
+            print(f"Failed to download vanilla JAR: {e}")
+            return "Failed to create server."
+
+        os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
+
+        server_props = (
+            "server-port=25565\n"
+            "enable-rcon=true\n"
+            "rcon.password=admin\n"
+            "rcon.port=25575\n"
+            "online-mode=false\n"
+        )
+        with open(f"data/servers/{server_name}/server.properties", "w") as f:
+            f.write(server_props)
+
+        full_jar_path = f"data/servers/{server_name}/{jar_name}"
+        container_name = f"mc-{server_name}"
+
+        update_server_info(
+            server_name, owner, "vanilla", server_version, full_jar_path,
+            hostname=hostname,
+            container_name=container_name,
+            forwarding_secret=forwarding_secret,
+            memory_mb=memory_mb,
+        )
+
+        print(f"Vanilla server '{server_name}' created successfully with version {server_version}.")
+        print(f"  Hostname: {hostname}")
+        print(f"  Container: {container_name}")
+        return f"Server '{server_name}' created successfully."
 
     elif server_type.lower() == "spigot":
         # Insert into DB early so it shows up as "Creating" in the UI

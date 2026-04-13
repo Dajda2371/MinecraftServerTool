@@ -31,6 +31,10 @@ def get_server_version(server_name):
             match = re.search(r"spigot(?:.*?)?-(\d+(?:\.\d+)+)\.jar", content)
             if match:
                 return match.group(1)
+            # Look for vanilla jar pattern: vanilla-<mc_ver>.jar
+            match = re.search(r"vanilla-(\d+(?:\.\d+)+)\.jar", content)
+            if match:
+                return match.group(1)
             # Fallback for simple names
             match = re.search(r"server-(\d+(?:\.\d+)+)\.jar", content)
             if match:

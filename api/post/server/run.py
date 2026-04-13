@@ -123,8 +123,8 @@ def run_server(server_name):
     # Configure server.properties for Velocity
     configure_server_properties(server_local_path, port)
 
-    # Configure Velocity modern forwarding
-    if forwarding_secret:
+    # Configure Velocity modern forwarding (not supported by vanilla)
+    if forwarding_secret and info.get("type") != "vanilla":
         configure_velocity_forwarding(server_local_path, forwarding_secret, info.get("type", "spigot"))
 
     # Ensure eula.txt exists
@@ -216,7 +216,7 @@ def get_server_status(server_name):
 
     container_name = info.get("container_name") or f"mc-{server_name}"
     
-    if info.get("jar_path") == "BUILDING...":
+    if info.get("jar_path") in ("BUILDING...", "DOWNLOADING..."):
         return {
             "name": server_name,
             "container": container_name,
