@@ -84,13 +84,13 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         f'bash -c "'
         f"apt-get update -qq && apt-get install -y -qq git && "
         f"for repo in Bukkit CraftBukkit Spigot BuildData; do "
-        f"if [ ! -d /data/\\$repo ] && [ -d /cache/\\$repo ]; then "
-        f"cp -a /cache/\\$repo /data/\\$repo; "
+        f"if [ ! -d /data/$repo ] && [ -d /cache/$repo ]; then "
+        f"cp -a /cache/$repo /data/$repo; "
         f"fi; done && "
         f"java -Xmx{java_heap}m -jar {BUILDTOOLSJAR} --rev {server_version} --compile-if-changed 2>&1 | tee /data/buildtools.log && "
         f"for repo in Bukkit CraftBukkit Spigot BuildData; do "
-        f"if [ -d /data/\\$repo ]; then "
-        f"rm -rf /cache/\\$repo && cp -a /data/\\$repo /cache/\\$repo; "
+        f"if [ -d /data/$repo ]; then "
+        f"rm -rf /cache/$repo && cp -a /data/$repo /cache/$repo; "
         f"fi; done && "
         f'chown -R 1000:1000 /data"'
     )
