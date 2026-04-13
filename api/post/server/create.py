@@ -11,8 +11,6 @@ from api.db import update_server_info
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
-RAMUSAGE = "1024M"
-
 DEFAULT_BUILD_JAVA = "21"
 
 
@@ -95,6 +93,9 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         volumes={
             server_host_path: {"bind": "/data", "mode": "rw"},
             maven_cache_path: {"bind": "/root/.m2", "mode": "rw"},
+        },
+        environment={
+            "MAVEN_OPTS": f"-Xmx{java_heap}m",
         },
         working_dir="/data",
         mem_limit=f"{memory_mb}m",
