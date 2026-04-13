@@ -116,7 +116,7 @@ def run_server(server_name):
     server_local_path = os.path.abspath(f"data/servers/{server_name}")
 
     container_name = info.get("container_name") or f"mc-{server_name}"
-    port = info.get("port") or 25566
+    port = info.get("port") or 25565
     forwarding_secret = info.get("forwarding_secret") or ""
     memory_mb = info.get("memory_mb") or 1024
 

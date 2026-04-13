@@ -249,6 +249,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
             # Write server.properties with online-mode=false for Velocity
             server_props = (
+                "server-port=25565\n"
                 "enable-rcon=true\n"
                 "rcon.password=admin\n"
                 "rcon.port=25575\n"

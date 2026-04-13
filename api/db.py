@@ -40,7 +40,11 @@ def init_db():
     if 'memory_mb' not in cols:
         cursor.execute("ALTER TABLE servers ADD COLUMN memory_mb INTEGER DEFAULT 1024")
 
-    
+    # Migrate existing servers to use standard port 25565
+    # (each container has its own IP, so no port conflicts)
+    cursor.execute("UPDATE servers SET port = 25565 WHERE port != 25565")
+
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,12 +164,8 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
             WHERE name = ?
         ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_secret, name))
     else:
-        # New server. If port not provided, pick next available starting from 25566
-        # (25565 is reserved for Velocity proxy)
         if port is None:
-            cursor.execute("SELECT max(port) FROM servers")
-            max_p = cursor.fetchone()[0]
-            port = (max_p + 1) if max_p and max_p >= 25566 else 25566
+            port = 25565
 
         # Generate a forwarding secret if not provided
         if forwarding_secret is None:

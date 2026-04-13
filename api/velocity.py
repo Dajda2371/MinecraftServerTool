@@ -108,7 +108,7 @@ def generate_velocity_toml():
     for srv in servers:
         name = srv["name"]
         container_name = srv.get("container_name") or f"mc-{name}"
-        port = srv.get("port") or 25566
+        port = srv.get("port") or 25565
         hostname = srv.get("hostname")
 
         server_entries.append(f'  {name} = "{container_name}:{port}"')
