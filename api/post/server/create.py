@@ -51,13 +51,15 @@ def download_build_tools(server_name):
         print("Downloaded BuildTools.jar successfully.")
 
 
-def run_build_tools_container(server_name, server_version, java_version=DEFAULT_BUILD_JAVA):
+def run_build_tools_container(server_name, server_version, java_version=DEFAULT_BUILD_JAVA, memory_mb=1024):
     """
     Run BuildTools inside an ephemeral Docker container.
     Returns (success, message, log_content).
     """
     host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
     server_host_path = os.path.join(host_data_path, "servers", server_name)
+    maven_cache_path = os.path.join(host_data_path, ".buildtools-cache", "m2")
+    os.makedirs(maven_cache_path, exist_ok=True)
     log_path = os.path.join("data", "servers", server_name, "buildtools.log")
     container_name = f"mc-build-{server_name}"
     image = f"eclipse-temurin:{java_version}-jdk"
@@ -77,10 +79,11 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
 
     print(f"Starting build container ({image}) for server '{server_name}' version {server_version}...")
 
+    java_heap = int(memory_mb * 0.8)
     command = (
         f'bash -c "'
         f"apt-get update -qq && apt-get install -y -qq git && "
-        f"java -jar {BUILDTOOLSJAR} --rev {server_version} 2>&1 | tee /data/buildtools.log && "
+        f"java -Xmx{java_heap}m -jar {BUILDTOOLSJAR} --rev {server_version} --compile-if-changed 2>&1 | tee /data/buildtools.log && "
         f'chown -R 1000:1000 /data"'
     )
 
@@ -91,9 +94,10 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         detach=True,
         volumes={
             server_host_path: {"bind": "/data", "mode": "rw"},
+            maven_cache_path: {"bind": "/root/.m2", "mode": "rw"},
         },
         working_dir="/data",
-        mem_limit="2g",
+        mem_limit=f"{memory_mb}m",
     )
 
     # Follow build log in real time
@@ -143,7 +147,7 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     return False, "Build failed.", log_content
 
 
-def run_build_tools(server_name, server_version):
+def run_build_tools(server_name, server_version, memory_mb=1024):
     """
     Run BuildTools in a Docker container with retry logic for network errors
     and Java version mismatches. Returns (success, message).
@@ -165,7 +169,7 @@ def run_build_tools(server_name, server_version):
 
     for attempt in range(max_retries):
         success, message, log_content = run_build_tools_container(
-            server_name, server_version, java_version
+            server_name, server_version, java_version, memory_mb=memory_mb
         )
 
         if success:
@@ -204,7 +208,7 @@ def run_build_tools(server_name, server_version):
     return False, "Failed to create server."
 
 
-def create_server(server_name, server_type, server_version, owner="admin", hostname=None):
+def create_server(server_name, server_type, server_version, owner="admin", hostname=None, memory_mb=1024):
     """
     Create a new Minecraft server.
 
@@ -214,6 +218,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         server_version: Minecraft version (e.g., "1.21.1")
         owner: Owner username
         hostname: Optional hostname for Velocity routing (e.g., "survival.mc.davidbenes.cz")
+        memory_mb: Memory allocation in MB for the server
     """
     print("creating server...")
     os.makedirs(f"data/servers/{server_name}", exist_ok=True)
@@ -240,10 +245,11 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             server_name, owner, "spigot", server_version, "BUILDING...",
             hostname=hostname,
             container_name=f"mc-{server_name}",
-            forwarding_secret=forwarding_secret
+            forwarding_secret=forwarding_secret,
+            memory_mb=memory_mb
         )
 
-        success, message = run_build_tools(server_name, server_version)
+        success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
         if success:
             os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
 
@@ -279,6 +285,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
                 hostname=hostname,
                 container_name=container_name,
                 forwarding_secret=forwarding_secret,
+                memory_mb=memory_mb,
             )
 
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")

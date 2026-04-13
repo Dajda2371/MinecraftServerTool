@@ -265,9 +265,15 @@ async function createServer(e) {
     const name = document.getElementById('server-name').value.trim();
     const type = document.getElementById('server-type').value;
     const version = document.getElementById('server-version').value.trim();
+    const memory_mb = parseInt(document.getElementById('server-memory').value) || 1024;
 
     if (!name || !version) {
         showToast('Please fill in all fields', 'error');
+        return;
+    }
+
+    if (memory_mb < 512) {
+        showToast('Memory must be at least 512 MB', 'error');
         return;
     }
 
@@ -276,7 +282,7 @@ async function createServer(e) {
     btn.innerHTML = '<span class="spinner"></span> Creating...';
 
     try {
-        const data = await apiFetch('/api/server/create', 'POST', { name, type, version });
+        const data = await apiFetch('/api/server/create', 'POST', { name, type, version, memory_mb });
         showToast(data.message || `Server '${name}' creation started!`, 'success');
         hideCreateModal();
         // Refresh after a short delay so the early DB entry appears
