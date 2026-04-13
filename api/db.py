@@ -141,28 +141,28 @@ def generate_forwarding_secret():
     """Generate a random forwarding secret for Velocity modern forwarding."""
     return secrets.token_hex(16)
 
-def update_server_info(name, owner, type, version, jar_path, port=None, hostname=None, container_name=None, forwarding_secret=None):
+def update_server_info(name, owner, type, version, jar_path, port=None, hostname=None, container_name=None, forwarding_secret=None, memory_mb=None):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-# Check if exists
+
+    # Check if exists
     cursor.execute("SELECT id, port, hostname, container_name, forwarding_secret, memory_mb FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
-    
+
     if data:
         # If values provided, update them, otherwise keep current
         new_port = port if port is not None else data[1]
         new_hostname = hostname if hostname is not None else data[2]
         new_container = container_name if container_name is not None else data[3]
         new_secret = forwarding_secret if forwarding_secret is not None else data[4]
-        # Note: memory update logic might go here later.
+        new_memory = memory_mb if memory_mb is not None else data[5]
         cursor.execute('''
-            UPDATE servers 
+            UPDATE servers
             SET owner = ?, type = ?, version = ?, jar_path = ?, port = ?,
-                hostname = ?, container_name = ?, forwarding_secret = ?
+                hostname = ?, container_name = ?, forwarding_secret = ?, memory_mb = ?
             WHERE name = ?
-        ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_secret, name))
+        ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_secret, new_memory, name))
     else:
         if port is None:
             port = 25565
@@ -175,10 +175,13 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
         if container_name is None:
             container_name = f"mc-{name}"
 
+        if memory_mb is None:
+            memory_mb = 1024
+
         cursor.execute('''
-            INSERT INTO servers (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret))
+            INSERT INTO servers (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb))
         
     conn.commit()
     conn.close()

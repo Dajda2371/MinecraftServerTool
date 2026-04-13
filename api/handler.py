@@ -179,16 +179,37 @@ class Handler(SimpleHTTPRequestHandler):
             # Only admin can create servers for other owners
             if user != 'admin' and owner != user:
                 return self._send_json(403, {"error": "Access denied: Cannot create server for another user"})
-            
+
             # If not admin, force owner to current user
             if user != 'admin':
                 owner = user
+
+            # Parse and validate memory_mb
+            try:
+                memory_mb = int(data.get("memory_mb", 1024))
+            except (TypeError, ValueError):
+                return self._send_json(400, {"error": "memory_mb must be an integer"})
+
+            if memory_mb < 512:
+                return self._send_json(400, {"error": "memory_mb must be at least 512"})
+
+            # Validate against user memory limit (admin bypasses)
+            if user != 'admin':
+                user_info = api.db.get_user_info(owner)
+                if user_info:
+                    memory_limit = user_info['memory_limit']
+                    servers = api.db.get_all_servers()
+                    used = sum(s.get('memory_mb', 1024) for s in servers if s['owner'] == owner)
+                    if (used + memory_mb) > memory_limit:
+                        return self._send_json(400, {
+                            "error": f"Cannot allocate {memory_mb} MB. Limit: {memory_limit} MB, already used: {used} MB."
+                        })
 
             import threading
             threading.Thread(
                 target=api.post.server.create.create_server,
                 args=(name, server_type, version),
-                kwargs={"owner": owner},
+                kwargs={"owner": owner, "memory_mb": memory_mb},
                 daemon=True
             ).start()
             return self._send_json(202, {"message": f"Creation of '{name}' started in background."})

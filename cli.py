@@ -59,7 +59,11 @@ def ApiPostServerCreate(cmd):
                 args = [server_name, server_type, server_version]
         else:
             server_name, server_type, server_version = args
-        response = api.post.server.create.create_server(server_name, server_type, server_version, owner=USER)
+
+        memory_input = input("Enter memory allocation in MB (default 1024): ").strip()
+        memory_mb = int(memory_input) if memory_input else 1024
+
+        response = api.post.server.create.create_server(server_name, server_type, server_version, owner=USER, memory_mb=memory_mb)
         return print(f"Server created: {response}")
 
 def ApiGetServerConsole(cmd):

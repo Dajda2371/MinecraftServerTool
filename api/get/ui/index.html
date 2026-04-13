@@ -143,6 +143,11 @@
                         <input type="text" id="server-version" placeholder="e.g. 1.21.1" required autocomplete="off">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label for="server-memory">Memory (MB)</label>
+                    <input type="number" id="server-memory" value="1024" min="512" step="256" required>
+                    <span class="form-hint">RAM allocated to this server (min 512 MB)</span>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="hideCreateModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="btn-submit-create">
