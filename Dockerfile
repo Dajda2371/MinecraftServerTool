@@ -8,7 +8,7 @@
 # It also needs Docker CLI access to spawn child server containers.
 # ============================================================================
 
-FROM python:3.13-slim-bookworm
+FROM python:3.13-bookworm
 
 # ---- System Dependencies ----
 RUN apt-get update && apt-get install -y \

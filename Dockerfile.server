@@ -8,7 +8,7 @@
 #   - No published ports (only reachable via mc-net → Velocity)
 # ============================================================================
 
-FROM openjdk:21-jre-slim
+FROM eclipse-temurin:21-jre
 
 # Create a non-root user for running the Minecraft server
 RUN groupadd -g 1000 minecraft && \

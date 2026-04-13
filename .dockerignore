@@ -1,0 +1,11 @@
+data/
+.venv/
+__pycache__/
+*.log
+.DS_Store
+.git/
+.vscode/
+tests/
+Dockerfile*
+docker-compose.yml
+requirements.txt.bak
