@@ -39,8 +39,8 @@ case "$1" in
         log_info "Building and starting containers..."
         docker compose -p "$PROJECT_NAME" up -d --build
         log_success "Infrastructure is up and running!"
-        log_info "Web UI: http://localhost:8000"
-        log_info "Velocity Proxy: localhost:25565"
+        log_info "Web UI:          http://localhost:8000  (mc-tool container)"
+        log_info "Velocity Proxy:  localhost:25565        (velocity container)"
         ;;
 
     "stop" | "down")

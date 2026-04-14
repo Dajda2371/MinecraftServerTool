@@ -2,15 +2,17 @@
 Velocity proxy management module.
 
 Handles downloading the Velocity JAR, generating velocity.toml from the database,
-and restarting the Velocity process when the configuration changes.
+and restarting the Velocity container when the configuration changes.
+
+Velocity runs in a separate Docker container (mc-velocity). This module generates
+the config files that are shared via volume mount, and restarts the container
+via the Docker API when config changes.
 """
 
 import os
-import subprocess
-import signal
 import json
 import requests
-import time
+import docker
 
 from api.db import get_all_servers
 
@@ -19,13 +21,15 @@ VELOCITY_DIR = os.path.abspath("data/velocity")
 VELOCITY_JAR = os.path.join(VELOCITY_DIR, "velocity.jar")
 VELOCITY_TOML = os.path.join(VELOCITY_DIR, "velocity.toml")
 VELOCITY_FORWARDING_SECRET = os.path.join(VELOCITY_DIR, "forwarding.secret")
-VELOCITY_PID_FILE = os.path.join(VELOCITY_DIR, "velocity.pid")
 
 # Velocity download URL (latest stable from PaperMC)
 VELOCITY_API_URL = "https://api.papermc.io/v2/projects/velocity"
 
 # Default bind address for Velocity
 VELOCITY_BIND = "0.0.0.0:25565"
+
+# Name of the Velocity Docker container (must match docker-compose.yml)
+VELOCITY_CONTAINER_NAME = "mc-velocity"
 
 
 def ensure_velocity_dir():
@@ -93,7 +97,7 @@ def download_velocity():
 def generate_velocity_toml():
     """
     Generate velocity.toml from the servers in the database.
-    
+
     Each server gets an entry in [servers] and optionally in [forced-hosts]
     if a hostname is configured.
     """
@@ -188,95 +192,26 @@ try = [{try_list}]
     return True
 
 
-def start_velocity():
-    """Start the Velocity proxy process in the background."""
-    ensure_velocity_dir()
-
-    if not os.path.exists(VELOCITY_JAR):
-        print("[Velocity] velocity.jar not found. Run download first.")
-        return False
-
-    # Generate config before starting
-    generate_velocity_toml()
-
-    # Check if already running
-    if os.path.exists(VELOCITY_PID_FILE):
-        try:
-            with open(VELOCITY_PID_FILE, "r") as f:
-                pid = int(f.read().strip())
-            os.kill(pid, 0)  # Check if process exists
-            print(f"[Velocity] Already running with PID {pid}.")
-            return True
-        except (ProcessLookupError, ValueError):
-            # Stale PID file
-            os.remove(VELOCITY_PID_FILE)
-
-    # Start Velocity
-    print("[Velocity] Starting Velocity proxy...")
-    log_path = os.path.join(VELOCITY_DIR, "velocity.log")
-
-    with open(log_path, "a") as log_file:
-        process = subprocess.Popen(
-            ["java", "-Xmx512M", "-Xms512M", "-jar", VELOCITY_JAR],
-            cwd=VELOCITY_DIR,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-
-    # Write PID
-    with open(VELOCITY_PID_FILE, "w") as f:
-        f.write(str(process.pid))
-
-    print(f"[Velocity] Started with PID {process.pid}.")
-    return True
-
-
-def stop_velocity():
-    """Stop the Velocity proxy process."""
-    if not os.path.exists(VELOCITY_PID_FILE):
-        print("[Velocity] No PID file found. Velocity may not be running.")
-        return False
-
-    try:
-        with open(VELOCITY_PID_FILE, "r") as f:
-            pid = int(f.read().strip())
-        os.kill(pid, signal.SIGTERM)
-        print(f"[Velocity] Sent SIGTERM to PID {pid}.")
-        # Wait briefly for it to terminate
-        time.sleep(2)
-        try:
-            os.kill(pid, 0)
-            # Still running, force kill
-            os.kill(pid, signal.SIGKILL)
-            print(f"[Velocity] Sent SIGKILL to PID {pid}.")
-        except ProcessLookupError:
-            pass
-
-        os.remove(VELOCITY_PID_FILE)
-        print("[Velocity] Stopped.")
-        return True
-    except (ProcessLookupError, ValueError) as e:
-        print(f"[Velocity] Process not found: {e}")
-        if os.path.exists(VELOCITY_PID_FILE):
-            os.remove(VELOCITY_PID_FILE)
-        return False
-
-
-def restart_velocity():
-    """Restart the Velocity proxy (regenerate config + restart process)."""
-    print("[Velocity] Restarting...")
-    stop_velocity()
-    time.sleep(1)
-    return start_velocity()
-
-
 def reload_velocity_config():
     """
-    Regenerate the Velocity config and signal the proxy to reload.
-    
-    Note: Velocity doesn't support live reload of server entries via SIGHUP.
-    A full restart is required for server list changes.
+    Regenerate the Velocity config and restart the Velocity container.
+
+    The config is written to the shared volume, then the mc-velocity container
+    is restarted via the Docker API so it picks up the new config.
     """
     generate_velocity_toml()
-    return restart_velocity()
+
+    try:
+        client = docker.from_env()
+        container = client.containers.get(VELOCITY_CONTAINER_NAME)
+        print(f"[Velocity] Restarting container '{VELOCITY_CONTAINER_NAME}'...")
+        container.restart(timeout=10)
+        print(f"[Velocity] Container restarted.")
+        return True
+    except docker.errors.NotFound:
+        print(f"[Velocity] Container '{VELOCITY_CONTAINER_NAME}' not found. "
+              "It will pick up the config when it starts.")
+        return False
+    except Exception as e:
+        print(f"[Velocity] Error restarting container: {e}")
+        return False

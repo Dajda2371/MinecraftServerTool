@@ -181,27 +181,31 @@ def ApiGetServerStatus(cmd):
 
 def ApiVelocityStart():
     api.velocity.download_velocity()
-    api.velocity.start_velocity()
+    api.velocity.reload_velocity_config()
 
 def ApiVelocityStop():
-    api.velocity.stop_velocity()
+    import docker
+    try:
+        client = docker.from_env()
+        container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+        container.stop(timeout=10)
+        print("Velocity container stopped.")
+    except docker.errors.NotFound:
+        print("Velocity container not found.")
 
 def ApiVelocityReload():
     api.velocity.reload_velocity_config()
 
 def ApiVelocityStatus():
-    import os
-    pid_file = api.velocity.VELOCITY_PID_FILE
-    if os.path.exists(pid_file):
-        with open(pid_file, "r") as f:
-            pid = f.read().strip()
-        try:
-            os.kill(int(pid), 0)
-            print(f"Velocity is running (PID {pid}).")
-        except ProcessLookupError:
-            print("Velocity PID file exists but process is not running.")
-    else:
-        print("Velocity is not running.")
+    import docker
+    try:
+        client = docker.from_env()
+        container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+        print(f"Velocity container status: {container.status}")
+    except docker.errors.NotFound:
+        print("Velocity container not found.")
+    except Exception as e:
+        print(f"Error checking Velocity status: {e}")
 
 def ApiPostUserCreate(cmd):
     args = cmd[len("user create "):].strip().split()
