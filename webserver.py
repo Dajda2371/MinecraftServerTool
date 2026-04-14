@@ -70,7 +70,7 @@ if __name__ == "__main__":
     from api.db import init_db
     init_db()
 
-    # Generate Velocity config (so supervisor can start Velocity with up-to-date config)
+    # Download Velocity JAR and generate config (shared with the velocity container via volume)
     try:
         from api.velocity import generate_velocity_toml, download_velocity
         download_velocity()

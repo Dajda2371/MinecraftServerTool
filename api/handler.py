@@ -116,19 +116,16 @@ class Handler(SimpleHTTPRequestHandler):
 
         # --- API: Velocity status ---
         elif self.path == "/api/velocity/status":
-            import os
-            pid_file = api.velocity.VELOCITY_PID_FILE
-            running = False
-            pid = None
-            if os.path.exists(pid_file):
-                with open(pid_file, "r") as f:
-                    pid = f.read().strip()
-                try:
-                    os.kill(int(pid), 0)
-                    running = True
-                except (ProcessLookupError, ValueError):
-                    running = False
-            return self._send_json(200, {"running": running, "pid": pid})
+            import docker as docker_mod
+            try:
+                client = docker_mod.from_env()
+                container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+                running = container.status == "running"
+                return self._send_json(200, {"running": running, "container": container.status})
+            except docker_mod.errors.NotFound:
+                return self._send_json(200, {"running": False, "container": "not found"})
+            except Exception as e:
+                return self._send_json(200, {"running": False, "container": str(e)})
 
         else:
             return self.send_error(404, "Not Found")
@@ -329,12 +326,18 @@ class Handler(SimpleHTTPRequestHandler):
                 
             if self.path == "/api/velocity/start":
                 api.velocity.download_velocity()
-                api.velocity.start_velocity()
-                return self._send_json(200, {"message": "Velocity proxy started."})
+                api.velocity.reload_velocity_config()
+                return self._send_json(200, {"message": "Velocity container restarted."})
 
             elif self.path == "/api/velocity/stop":
-                api.velocity.stop_velocity()
-                return self._send_json(200, {"message": "Velocity stopped"})
+                import docker as docker_mod
+                try:
+                    client = docker_mod.from_env()
+                    container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+                    container.stop(timeout=10)
+                    return self._send_json(200, {"message": "Velocity container stopped."})
+                except docker_mod.errors.NotFound:
+                    return self._send_json(200, {"message": "Velocity container not found."})
 
             elif self.path == "/api/velocity/reload":
                 api.velocity.reload_velocity_config()
