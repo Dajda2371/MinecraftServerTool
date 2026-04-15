@@ -36,7 +36,9 @@ check_docker() {
 case "$1" in
     "build" | "up" | "")
         check_docker
-        log_info "Building and starting containers..."
+        log_info "Building child-server base image (mc-server-base)..."
+        docker compose -p "$PROJECT_NAME" --profile build-only build mc-server-base
+        log_info "Building and starting infrastructure containers..."
         docker compose -p "$PROJECT_NAME" up -d --build
         log_success "Infrastructure is up and running!"
         log_info "Web UI:          http://localhost:8000  (mc-tool container)"
