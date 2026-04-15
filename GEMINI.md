@@ -29,7 +29,7 @@ The management container:
 
 ### Child Containers (spawned dynamically)
 Each Minecraft server runs in its own isolated container:
-- Based on `openjdk:21-jre-slim` (`Dockerfile.server`)
+- Based on `eclipse-temurin:21-jre` (`Dockerfile.server`)
 - Connected to `mc-net` only — **no published ports**
 - Non-root `minecraft` user (UID 1000)
 - Data persisted via bind mounts at `/data`
