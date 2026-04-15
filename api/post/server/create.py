@@ -34,18 +34,76 @@ def fetch_vanilla_jar_url(version):
     raise ValueError(f"Version '{version}' not found in vanilla JAR manifest.")
 
 
-def download_vanilla_jar(server_name, version):
-    """Download the vanilla server JAR for the given version."""
-    url = fetch_vanilla_jar_url(version)
-    jar_name = f"vanilla-{version}.jar"
-    target = f"data/servers/{server_name}/{jar_name}"
+def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512):
+    """
+    Download the vanilla server JAR inside an ephemeral Docker container with
+    the server's data folder bind-mounted at /data. Mirrors the pattern used
+    by run_build_tools_container so all "create/build" work happens in a
+    sidecar container, never in the management container.
 
-    print(f"Downloading vanilla server JAR from {url}...")
-    response = requests.get(url, stream=True)
-    response.raise_for_status()
-    with open(target, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    Returns (success, message, jar_filename).
+    """
+    host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
+    server_host_path = os.path.join(host_data_path, "servers", server_name)
+    container_name = f"mc-download-{server_name}"
+    image = f"eclipse-temurin:{DEFAULT_BUILD_JAVA}-jdk"
+    jar_filename = f"vanilla-{version}.jar"
+
+    client = docker.from_env()
+
+    # Remove stale download container if exists
+    try:
+        old = client.containers.get(container_name)
+        old.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+
+    print(f"Starting download container ({image}) for vanilla server '{server_name}' version {version}...")
+
+    command = (
+        f'bash -c "'
+        f"apt-get update -qq && apt-get install -y -qq curl && "
+        f"curl -fsSL -o /data/{jar_filename} '{jar_url}' && "
+        f'chown -R 1000:1000 /data"'
+    )
+
+    container = client.containers.run(
+        image=image,
+        command=command,
+        name=container_name,
+        detach=True,
+        volumes={server_host_path: {"bind": "/data", "mode": "rw"}},
+        working_dir="/data",
+        mem_limit=f"{memory_mb}m",
+    )
+
+    result = container.wait()
+    exit_code = result.get("StatusCode", -1)
+
+    try:
+        logs = container.logs().decode("utf-8", errors="replace")
+    except Exception:
+        logs = ""
+
+    try:
+        container.remove()
+    except Exception:
+        pass
+
+    if exit_code != 0:
+        return False, f"Vanilla JAR download failed (exit {exit_code}):\n{logs}", jar_filename
+
+    return True, "Download successful.", jar_filename
+
+
+def download_vanilla_jar(server_name, version, memory_mb=512):
+    """Download the vanilla server JAR via an ephemeral container."""
+    url = fetch_vanilla_jar_url(version)
+    success, message, jar_name = run_vanilla_download_container(
+        server_name, version, url, memory_mb=memory_mb
+    )
+    if not success:
+        raise RuntimeError(message)
     print(f"Downloaded {jar_name} successfully.")
     return jar_name
 
