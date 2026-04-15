@@ -13,12 +13,15 @@ import docker
 
 from api.db import get_server_info, update_server_info
 from api.infrared import reload_proxy_config
+from api.post.server.mounts import server_data_mount
 
 # Docker network name shared by all server containers and the management container
 DOCKER_NETWORK = "mc-net"
 
-# Default server image
-DEFAULT_SERVER_IMAGE = "eclipse-temurin:21-jre"
+# Default server image — built from Dockerfile.server via the
+# mc-server-base compose service. Ships with gosu + our entrypoint that
+# chowns /data and drops to UID 1000 before exec'ing Java.
+DEFAULT_SERVER_IMAGE = "mc-server-base:latest"
 
 
 def ensure_network(client):
@@ -85,9 +88,9 @@ def run_server(server_name):
     client = docker.from_env()
     ensure_network(client)
 
-    # Path handling for Docker-out-of-Docker
-    host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
-    server_host_path = f"{host_data_path}/servers/{server_name}"
+    # Server data lives in the mc-data named volume at servers/<name>/.
+    # mc-tool accesses it through its own /app/data mount; child
+    # containers mount the subpath directly.
     server_local_path = os.path.abspath(f"data/servers/{server_name}")
 
     container_name = info.get("container_name") or f"mc-{server_name}"
@@ -132,16 +135,10 @@ def run_server(server_name):
             detach=True,
             # NO port publishing — only reachable within mc-net
             network=DOCKER_NETWORK,
-            volumes={
-                server_host_path: {
-                    "bind": "/data",
-                    "mode": "rw",
-                }
-            },
+            mounts=[server_data_mount(server_name)],
             working_dir="/data",
-            # Run as non-root user (UID 1000)
-            user="1000:1000",
-            # Environment variables
+            # Entrypoint in the image starts as root, chowns /data, then
+            # drops to UID 1000 via gosu before exec'ing Java.
             environment={
                 "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
             },

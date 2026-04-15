@@ -8,6 +8,11 @@ import requests
 
 import api.get.lastbuildtoolsversion
 from api.db import update_server_info
+from api.post.server.mounts import (
+    SERVER_DATA_VOLUME,
+    server_data_mount,
+    volume_subpath_mount,
+)
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
@@ -43,8 +48,6 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
 
     Returns (success, message, jar_filename).
     """
-    host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
-    server_host_path = os.path.join(host_data_path, "servers", server_name)
     container_name = f"mc-download-{server_name}"
     image = f"eclipse-temurin:{DEFAULT_BUILD_JAVA}-jdk"
     jar_filename = f"vanilla-{version}.jar"
@@ -72,7 +75,7 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
         command=command,
         name=container_name,
         detach=True,
-        volumes={server_host_path: {"bind": "/data", "mode": "rw"}},
+        mounts=[server_data_mount(server_name)],
         working_dir="/data",
         mem_limit=f"{memory_mb}m",
     )
@@ -148,12 +151,11 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     Run BuildTools inside an ephemeral Docker container.
     Returns (success, message, log_content).
     """
-    host_data_path = os.getenv("MC_HOST_DATA_DIR", os.path.abspath("data"))
-    server_host_path = os.path.join(host_data_path, "servers", server_name)
-    maven_cache_path = os.path.join(host_data_path, ".buildtools-cache", "m2")
-    repo_cache_path = os.path.join(host_data_path, ".buildtools-cache", "repos")
-    os.makedirs(maven_cache_path, exist_ok=True)
-    os.makedirs(repo_cache_path, exist_ok=True)
+    # BuildTools caches live as subpaths of the shared mc-data volume so we
+    # don't introduce another top-level volume. mc-tool can seed them via
+    # its own /app/data mount.
+    os.makedirs("data/.buildtools-cache/m2", exist_ok=True)
+    os.makedirs("data/.buildtools-cache/repos", exist_ok=True)
     log_path = os.path.join("data", "servers", server_name, "buildtools.log")
     container_name = f"mc-build-{server_name}"
     image = f"eclipse-temurin:{java_version}-jdk"
@@ -194,11 +196,11 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         command=command,
         name=container_name,
         detach=True,
-        volumes={
-            server_host_path: {"bind": "/data", "mode": "rw"},
-            maven_cache_path: {"bind": "/root/.m2", "mode": "rw"},
-            repo_cache_path: {"bind": "/cache", "mode": "rw"},
-        },
+        mounts=[
+            server_data_mount(server_name),
+            volume_subpath_mount("/root/.m2", SERVER_DATA_VOLUME, ".buildtools-cache/m2"),
+            volume_subpath_mount("/cache", SERVER_DATA_VOLUME, ".buildtools-cache/repos"),
+        ],
         environment={
             "MAVEN_OPTS": f"-Xmx{java_heap}m",
         },

@@ -1,4 +1,4 @@
 prompt_toolkit
 mcrcon
 requests
-docker
+docker>=7.1.0
