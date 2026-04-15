@@ -323,7 +323,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         server_type: Server type (spigot, vanilla, paper)
         server_version: Minecraft version (e.g., "1.21.1")
         owner: Owner username
-        hostname: Optional hostname for Velocity routing (e.g., "survival.mc.davidbenes.cz")
+        hostname: Optional hostname for Infrared routing (e.g., "survival.mc.davidbenes.cz")
         memory_mb: Memory allocation in MB for the server
     """
     print("creating server...")
@@ -337,16 +337,11 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         except ImportError:
             hostname = f"{server_name}.mc.localhost"
 
-    # Generate Velocity forwarding secret
-    from api.db import generate_forwarding_secret
-    forwarding_secret = generate_forwarding_secret()
-
     if server_type.lower() == "vanilla":
         update_server_info(
             server_name, owner, "vanilla", server_version, "DOWNLOADING...",
             hostname=hostname,
             container_name=f"mc-{server_name}",
-            forwarding_secret=forwarding_secret,
             memory_mb=memory_mb
         )
 
@@ -363,7 +358,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             "enable-rcon=true\n"
             "rcon.password=admin\n"
             "rcon.port=25575\n"
-            "online-mode=false\n"
+            "online-mode=true\n"
         )
         with open(f"data/servers/{server_name}/server.properties", "w") as f:
             f.write(server_props)
@@ -375,7 +370,6 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             server_name, owner, "vanilla", server_version, full_jar_path,
             hostname=hostname,
             container_name=container_name,
-            forwarding_secret=forwarding_secret,
             memory_mb=memory_mb,
         )
 
@@ -390,7 +384,6 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             server_name, owner, "spigot", server_version, "BUILDING...",
             hostname=hostname,
             container_name=f"mc-{server_name}",
-            forwarding_secret=forwarding_secret,
             memory_mb=memory_mb
         )
 
@@ -398,29 +391,17 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         if success:
             os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
 
-            # Write server.properties with online-mode=false for Velocity
+            # Infrared proxies at the connection level — backend handles its own
+            # Mojang auth (online-mode=true).
             server_props = (
                 "server-port=25565\n"
                 "enable-rcon=true\n"
                 "rcon.password=admin\n"
                 "rcon.port=25575\n"
-                "online-mode=false\n"
+                "online-mode=true\n"
             )
             with open(f"data/servers/{server_name}/server.properties", "w") as f:
                 f.write(server_props)
-
-            # Write Velocity modern forwarding config
-            paper_config_dir = f"data/servers/{server_name}/config"
-            os.makedirs(paper_config_dir, exist_ok=True)
-            paper_global = (
-                "proxies:\n"
-                "  velocity:\n"
-                "    enabled: true\n"
-                "    online-mode: true\n"
-                f'    secret: "{forwarding_secret}"\n'
-            )
-            with open(f"{paper_config_dir}/paper-global.yml", "w") as f:
-                f.write(paper_global)
 
             full_jar_path = f"data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar"
             container_name = f"mc-{server_name}"
@@ -429,14 +410,13 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
                 server_name, owner, "spigot", server_version, full_jar_path,
                 hostname=hostname,
                 container_name=container_name,
-                forwarding_secret=forwarding_secret,
                 memory_mb=memory_mb,
             )
 
             print(f"Spigot server '{server_name}' created successfully with version {server_version}.")
             print(f"  Hostname: {hostname}")
             print(f"  Container: {container_name}")
-            print(f"  Online-mode: false (Velocity handles auth)")
+            print(f"  Online-mode: true (backend handles auth, Infrared routes only)")
             return f"Server '{server_name}' created successfully."
         else:
             return message

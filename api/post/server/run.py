@@ -2,17 +2,17 @@
 Launch a Minecraft server as an isolated Docker child container on the mc-net network.
 
 Key properties:
-- No published ports — only reachable via Velocity on the internal Docker network.
+- No published ports — only reachable via Infrared on the internal Docker network.
 - Named volume for world data persistence.
 - Non-root user running the server process.
-- Connects to mc-net so Velocity can route to it by container name.
+- Connects to mc-net so Infrared can route to it by container name.
 """
 
 import os
 import docker
 
 from api.db import get_server_info, update_server_info
-from api.velocity import reload_velocity_config
+from api.infrared import reload_proxy_config
 
 # Docker network name shared by all server containers and the management container
 DOCKER_NETWORK = "mc-net"
@@ -32,8 +32,8 @@ def ensure_network(client):
 
 def configure_server_properties(server_path, port):
     """
-    Ensure server.properties has correct settings for running behind Velocity:
-    - online-mode=false (Velocity handles authentication)
+    Ensure server.properties has correct settings for running behind Infrared:
+    - online-mode=true (backend handles Mojang auth; Infrared only routes)
     - server-port set to the assigned internal port
     """
     props_path = os.path.join(server_path, "server.properties")
@@ -48,8 +48,9 @@ def configure_server_properties(server_path, port):
                     key, value = line.split("=", 1)
                     properties[key.strip()] = value.strip()
 
-    # Set required values for Velocity
-    properties["online-mode"] = "false"
+    # Set required values: Infrared is a connection-level proxy, so each backend
+    # runs online-mode=true and does its own Mojang authentication.
+    properties["online-mode"] = "true"
     properties["server-port"] = str(port)
 
     # Ensure RCON is enabled for console access
@@ -66,39 +67,13 @@ def configure_server_properties(server_path, port):
             f.write(f"{key}={value}\n")
 
 
-def configure_velocity_forwarding(server_path, forwarding_secret, server_type="spigot"):
-    """
-    Configure Velocity modern forwarding on the server.
-    
-    For Paper/Spigot servers, this writes to:
-    - config/paper-global.yml (Paper 1.19+)
-    - spigot.yml as fallback
-    """
-    # Paper global config for Velocity forwarding
-    paper_config_dir = os.path.join(server_path, "config")
-    os.makedirs(paper_config_dir, exist_ok=True)
-    
-    paper_global_path = os.path.join(paper_config_dir, "paper-global.yml")
-    
-    paper_config = f"""# Paper Global Configuration — auto-generated for Velocity forwarding
-proxies:
-  velocity:
-    enabled: true
-    online-mode: true
-    secret: "{forwarding_secret}"
-"""
-    
-    with open(paper_global_path, "w") as f:
-        f.write(paper_config)
-
-
 def run_server(server_name):
     """
     Start a Minecraft server inside an isolated Docker container on mc-net.
-    
+
     The container:
     - Uses the server's assigned internal port (not published to host)
-    - Connects to mc-net for Velocity routing
+    - Connects to mc-net for Infrared routing
     - Mounts the server data as a bind volume
     - Runs as non-root user
     """
@@ -117,15 +92,10 @@ def run_server(server_name):
 
     container_name = info.get("container_name") or f"mc-{server_name}"
     port = info.get("port") or 25565
-    forwarding_secret = info.get("forwarding_secret") or ""
     memory_mb = info.get("memory_mb") or 1024
 
-    # Configure server.properties for Velocity
+    # Configure server.properties (online-mode=true, correct port)
     configure_server_properties(server_local_path, port)
-
-    # Configure Velocity modern forwarding (not supported by vanilla)
-    if forwarding_secret and info.get("type") != "vanilla":
-        configure_velocity_forwarding(server_local_path, forwarding_secret, info.get("type", "spigot"))
 
     # Ensure eula.txt exists
     eula_path = os.path.join(server_local_path, "eula.txt")
@@ -192,16 +162,16 @@ def run_server(server_name):
             container_name=container_name,
         )
 
-        # Reload Velocity config so it knows about this server
+        # Reload Infrared config so it knows about this server
         try:
-            reload_velocity_config()
+            reload_proxy_config()
         except Exception as e:
-            print(f"[Velocity] Warning: Could not reload Velocity config: {e}")
+            print(f"[Infrared] Warning: Could not reload Infrared config: {e}")
 
         return (
             f"Server '{server_name}' started in container '{container_name}' "
             f"on internal port {port} (mc-net). "
-            f"Not published to host — accessible only via Velocity proxy."
+            f"Not published to host — accessible only via Infrared proxy."
         )
 
     except Exception as e:

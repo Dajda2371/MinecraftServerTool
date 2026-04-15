@@ -5,7 +5,7 @@
 # Each server gets its own isolated container with:
 #   - Non-root user running the server process
 #   - Data volume mounted at /data for world persistence
-#   - No published ports (only reachable via mc-net → Velocity)
+#   - No published ports (only reachable via mc-net → Infrared)
 # ============================================================================
 
 FROM eclipse-temurin:21-jre

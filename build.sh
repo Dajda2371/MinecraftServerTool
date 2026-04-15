@@ -3,7 +3,7 @@
 # Minecraft Server Tool — Build & Management Script
 # ============================================================================
 # This script handles the lifecycle of the Minecraft Server Tool Docker-based
-# infrastructure, including the management UI and Velocity proxy.
+# infrastructure, including the management UI and Infrared proxy.
 # ============================================================================
 
 set -e
@@ -40,7 +40,7 @@ case "$1" in
         docker compose -p "$PROJECT_NAME" up -d --build
         log_success "Infrastructure is up and running!"
         log_info "Web UI:          http://localhost:8000  (mc-tool container)"
-        log_info "Velocity Proxy:  localhost:25565        (velocity container)"
+        log_info "Infrared Proxy:  localhost:25565        (mc-infrared container)"
         ;;
 
     "stop" | "down")

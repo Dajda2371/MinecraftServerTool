@@ -15,7 +15,7 @@ import api.post.user.delete
 import api.post.user.assign_memory
 import api.post.user.reset_password
 import api.post.server.memory
-import api.velocity
+import api.infrared
 
 USER = None
 QUITCMD = ['q', 'quit', 'back', 'return']
@@ -179,33 +179,45 @@ def ApiGetServerStatus(cmd):
     else:
         print(status)
 
-def ApiVelocityStart():
-    api.velocity.download_velocity()
-    api.velocity.reload_velocity_config()
-
-def ApiVelocityStop():
+def ApiProxyStart():
+    # Infrared is managed by docker-compose; regenerate the config and make
+    # sure the container is running.
+    api.infrared.reload_proxy_config()
     import docker
     try:
         client = docker.from_env()
-        container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        if container.status != "running":
+            container.start()
+            print("Infrared container started.")
+        else:
+            print("Infrared config reloaded (container already running).")
+    except docker.errors.NotFound:
+        print("Infrared container not found. Start it with 'docker compose up -d infrared'.")
+
+def ApiProxyStop():
+    import docker
+    try:
+        client = docker.from_env()
+        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
         container.stop(timeout=10)
-        print("Velocity container stopped.")
+        print("Infrared container stopped.")
     except docker.errors.NotFound:
-        print("Velocity container not found.")
+        print("Infrared container not found.")
 
-def ApiVelocityReload():
-    api.velocity.reload_velocity_config()
+def ApiProxyReload():
+    api.infrared.reload_proxy_config()
 
-def ApiVelocityStatus():
+def ApiProxyStatus():
     import docker
     try:
         client = docker.from_env()
-        container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
-        print(f"Velocity container status: {container.status}")
+        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        print(f"Infrared container status: {container.status}")
     except docker.errors.NotFound:
-        print("Velocity container not found.")
+        print("Infrared container not found.")
     except Exception as e:
-        print(f"Error checking Velocity status: {e}")
+        print(f"Error checking Infrared status: {e}")
 
 def ApiPostUserCreate(cmd):
     args = cmd[len("user create "):].strip().split()
@@ -331,10 +343,10 @@ while True:
             print("  user assign <name> <mb>  - Assign memory limit to a user (admin only)")
             print("  user reset-password <n> <p> - Reset user password (admin only)")
             print("  user list                - List all users")
-            print("  velocity start           - Download and start Velocity proxy")
-            print("  velocity stop            - Stop Velocity proxy")
-            print("  velocity reload          - Reload Velocity config from DB")
-            print("  velocity status          - Check Velocity process status")
+            print("  proxy start              - Start Infrared proxy (and reload config)")
+            print("  proxy stop               - Stop Infrared proxy")
+            print("  proxy reload             - Reload Infrared config from DB")
+            print("  proxy status             - Check Infrared container status")
             print("  logout                   - Logout current user")
             print("  help                     - Show this help message")
             print("  exit                     - Exit the program")
@@ -468,23 +480,23 @@ while True:
             USER = None
             print("Logged out successfully.")
 
-        elif cmd.startswith("velocity"):
-            if cmd == "velocity" or cmd == "velocity help":
-                print("Velocity commands:")
-                print("  velocity start   - Download and start Velocity proxy")
-                print("  velocity stop    - Stop Velocity proxy")
-                print("  velocity reload  - Reload Velocity config from DB")
-                print("  velocity status  - Check Velocity process status")
-            elif cmd == "velocity start":
-                ApiVelocityStart()
-            elif cmd == "velocity stop":
-                ApiVelocityStop()
-            elif cmd == "velocity reload":
-                ApiVelocityReload()
-            elif cmd == "velocity status":
-                ApiVelocityStatus()
+        elif cmd.startswith("proxy"):
+            if cmd == "proxy" or cmd == "proxy help":
+                print("Proxy commands (Infrared):")
+                print("  proxy start   - Start Infrared proxy (and reload config)")
+                print("  proxy stop    - Stop Infrared proxy")
+                print("  proxy reload  - Reload Infrared config from DB")
+                print("  proxy status  - Check Infrared container status")
+            elif cmd == "proxy start":
+                ApiProxyStart()
+            elif cmd == "proxy stop":
+                ApiProxyStop()
+            elif cmd == "proxy reload":
+                ApiProxyReload()
+            elif cmd == "proxy status":
+                ApiProxyStatus()
             else:
-                print("Invalid velocity command. Type 'velocity help'.")
+                print("Invalid proxy command. Type 'proxy help'.")
 
         else:
             print("Invalid command. Please try again.")

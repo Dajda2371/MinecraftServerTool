@@ -41,7 +41,7 @@ async function checkAuth() {
         }
         await loadServers();
         if (currentUser.username === 'admin') {
-            await loadVelocityStatus();
+            await loadProxyStatus();
         }
     } catch (err) {
         window.location.href = '/login.html';
@@ -81,32 +81,32 @@ async function loadServers() {
     }
 }
 
-async function loadVelocityStatus() {
+async function loadProxyStatus() {
     try {
-        const data = await apiFetch('/api/velocity/status');
-        const badge = document.getElementById('velocity-status');
+        const data = await apiFetch('/api/proxy/status');
+        const badge = document.getElementById('proxy-status');
         const text = badge.querySelector('.status-text');
-        const btn = document.getElementById('btn-velocity-toggle');
+        const btn = document.getElementById('btn-proxy-toggle');
 
         badge.classList.remove('is-running', 'is-stopped');
 
         if (data.running) {
             badge.classList.add('is-running');
-            text.textContent = 'Velocity Running';
+            text.textContent = 'Proxy Running';
             btn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                 Stop
             `;
         } else {
             badge.classList.add('is-stopped');
-            text.textContent = 'Velocity Stopped';
+            text.textContent = 'Proxy Stopped';
             btn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Start
             `;
         }
     } catch (err) {
-        console.error('Failed to load Velocity status:', err);
+        console.error('Failed to load proxy status:', err);
     }
 }
 
@@ -380,24 +380,24 @@ async function updateHostname(e) {
     }
 }
 
-// --- Velocity Toggle ---
-async function toggleVelocity() {
-    const badge = document.getElementById('velocity-status');
+// --- Proxy Toggle ---
+async function toggleProxy() {
+    const badge = document.getElementById('proxy-status');
     const isRunning = badge.classList.contains('is-running');
 
     try {
         if (isRunning) {
-            showToast('Stopping Velocity...', 'info');
-            await apiFetch('/api/velocity/stop', 'POST');
-            showToast('Velocity stopped', 'success');
+            showToast('Stopping proxy...', 'info');
+            await apiFetch('/api/proxy/stop', 'POST');
+            showToast('Proxy stopped', 'success');
         } else {
-            showToast('Starting Velocity...', 'info');
-            await apiFetch('/api/velocity/start', 'POST');
-            showToast('Velocity started', 'success');
+            showToast('Starting proxy...', 'info');
+            await apiFetch('/api/proxy/start', 'POST');
+            showToast('Proxy started', 'success');
         }
-        await loadVelocityStatus();
+        await loadProxyStatus();
     } catch (err) {
-        showToast(`Velocity error: ${err.message}`, 'error');
+        showToast(`Proxy error: ${err.message}`, 'error');
     }
 }
 
@@ -559,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentUser) {
             loadServers();
             if (currentUser.username === 'admin') {
-                loadVelocityStatus();
+                loadProxyStatus();
             }
         }
     }, 10000);

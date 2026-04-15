@@ -7,7 +7,7 @@ import shutil
 import docker
 
 from api.db import get_server_info, delete_server as db_delete_server
-from api.velocity import reload_velocity_config
+from api.infrared import reload_proxy_config
 
 
 def delete_server(server_name, remove_data=False):
@@ -16,7 +16,7 @@ def delete_server(server_name, remove_data=False):
     1. Stop and remove the Docker container
     2. Remove the server from the database
     3. Optionally remove server data files
-    4. Reload Velocity config
+    4. Reload Infrared config
     """
     info = get_server_info(server_name)
     if not info:
@@ -53,10 +53,10 @@ def delete_server(server_name, remove_data=False):
         else:
             print(f"[Data] No data directory found at '{server_data_path}'.")
 
-    # Reload Velocity config to remove the server entry
+    # Reload Infrared config to remove the server entry
     try:
-        reload_velocity_config()
+        reload_proxy_config()
     except Exception as e:
-        print(f"[Velocity] Warning: Could not reload Velocity config: {e}")
+        print(f"[Infrared] Warning: Could not reload Infrared config: {e}")
 
     return f"Server '{server_name}' has been deleted."

@@ -7,8 +7,6 @@ __pycache__
 .DS_Store
 *.pyc
 .venv
-data/velocity/velocity.jar
-data/velocity/velocity.log
-data/velocity/velocity.pid
-data/velocity/forwarding.secret
+data/infrared/config.yml
+data/infrared/proxies/
 .claude

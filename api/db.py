@@ -1,6 +1,5 @@
 import sqlite3
 import os
-import secrets
 
 DB_PATH = "data/data.db"
 
@@ -21,11 +20,10 @@ def init_db():
             port INTEGER DEFAULT 25565,
             hostname TEXT,
             container_name TEXT,
-            forwarding_secret TEXT,
             memory_mb INTEGER DEFAULT 1024
         )
     ''')
-    
+
     # Check for column migrations
     cursor.execute("PRAGMA table_info(servers)")
     cols = [c[1] for c in cursor.fetchall()]
@@ -35,10 +33,16 @@ def init_db():
         cursor.execute("ALTER TABLE servers ADD COLUMN hostname TEXT")
     if 'container_name' not in cols:
         cursor.execute("ALTER TABLE servers ADD COLUMN container_name TEXT")
-    if 'forwarding_secret' not in cols:
-        cursor.execute("ALTER TABLE servers ADD COLUMN forwarding_secret TEXT")
     if 'memory_mb' not in cols:
         cursor.execute("ALTER TABLE servers ADD COLUMN memory_mb INTEGER DEFAULT 1024")
+    # Drop legacy column: forwarding_secret was used for Velocity modern forwarding.
+    # Infrared does not require it. Requires SQLite 3.35+ (July 2021).
+    if 'forwarding_secret' in cols:
+        try:
+            cursor.execute("ALTER TABLE servers DROP COLUMN forwarding_secret")
+        except sqlite3.OperationalError as e:
+            print(f"[DB] Warning: could not drop 'forwarding_secret' column: {e}. "
+                  "Requires SQLite 3.35+. Column will be left in place.")
 
     # Migrate existing servers to use standard port 25565
     # (each container has its own IP, so no port conflicts)
@@ -137,17 +141,13 @@ def verify_user_password(username, password):
             return True
     return False
 
-def generate_forwarding_secret():
-    """Generate a random forwarding secret for Velocity modern forwarding."""
-    return secrets.token_hex(16)
-
-def update_server_info(name, owner, type, version, jar_path, port=None, hostname=None, container_name=None, forwarding_secret=None, memory_mb=None):
+def update_server_info(name, owner, type, version, jar_path, port=None, hostname=None, container_name=None, memory_mb=None):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Check if exists
-    cursor.execute("SELECT id, port, hostname, container_name, forwarding_secret, memory_mb FROM servers WHERE name = ?", (name,))
+    cursor.execute("SELECT id, port, hostname, container_name, memory_mb FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
 
     if data:
@@ -155,21 +155,16 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
         new_port = port if port is not None else data[1]
         new_hostname = hostname if hostname is not None else data[2]
         new_container = container_name if container_name is not None else data[3]
-        new_secret = forwarding_secret if forwarding_secret is not None else data[4]
-        new_memory = memory_mb if memory_mb is not None else data[5]
+        new_memory = memory_mb if memory_mb is not None else data[4]
         cursor.execute('''
             UPDATE servers
             SET owner = ?, type = ?, version = ?, jar_path = ?, port = ?,
-                hostname = ?, container_name = ?, forwarding_secret = ?, memory_mb = ?
+                hostname = ?, container_name = ?, memory_mb = ?
             WHERE name = ?
-        ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_secret, new_memory, name))
+        ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_memory, name))
     else:
         if port is None:
             port = 25565
-
-        # Generate a forwarding secret if not provided
-        if forwarding_secret is None:
-            forwarding_secret = generate_forwarding_secret()
 
         # Generate container name if not provided
         if container_name is None:
@@ -179,10 +174,10 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
             memory_mb = 1024
 
         cursor.execute('''
-            INSERT INTO servers (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb))
-        
+            INSERT INTO servers (name, owner, type, version, jar_path, port, hostname, container_name, memory_mb)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, owner, type, version, jar_path, port, hostname, container_name, memory_mb))
+
     conn.commit()
     conn.close()
 
@@ -190,7 +185,7 @@ def get_server_info(name):
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb FROM servers WHERE name = ?", (name,))
+    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb FROM servers WHERE name = ?", (name,))
     data = cursor.fetchone()
     conn.close()
     if data:
@@ -203,8 +198,7 @@ def get_server_info(name):
             "port": data[5],
             "hostname": data[6],
             "container_name": data[7],
-            "forwarding_secret": data[8],
-            "memory_mb": data[9]
+            "memory_mb": data[8]
         }
     return None
 
@@ -213,7 +207,7 @@ def get_all_servers():
     init_db()
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, forwarding_secret, memory_mb FROM servers")
+    cursor.execute("SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb FROM servers")
     rows = cursor.fetchall()
     conn.close()
     servers = []
@@ -227,8 +221,7 @@ def get_all_servers():
             "port": data[5],
             "hostname": data[6],
             "container_name": data[7],
-            "forwarding_secret": data[8],
-            "memory_mb": data[9]
+            "memory_mb": data[8]
         })
     return servers
 

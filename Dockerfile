@@ -2,10 +2,10 @@
 # Management Container Dockerfile
 # ============================================================================
 # This container runs the MinecraftServerTool (Python web server + CLI for
-# managing Minecraft servers). It generates Velocity config and spawns child
-# server containers via the Docker socket.
+# managing Minecraft servers). It generates Infrared proxy config and spawns
+# child server containers via the Docker socket.
 #
-# Velocity runs in a separate container (see Dockerfile.velocity).
+# Infrared runs in a separate container (see docker-compose.yml).
 # ============================================================================
 
 FROM python:3.13-bookworm
@@ -33,7 +33,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure data directories exist
-RUN mkdir -p data/servers data/velocity
+RUN mkdir -p data/servers data/infrared data/infrared/proxies
 
 # ---- Supervisor Configuration ----
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
