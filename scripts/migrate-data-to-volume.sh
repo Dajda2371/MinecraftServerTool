@@ -20,13 +20,23 @@ if [ ! -d "./data" ]; then
     exit 0
 fi
 
+echo "Source tree to migrate:"
+ls -la ./data
+echo
+if [ -f "./data/data.db" ]; then
+    echo "Found ./data/data.db ($(du -h ./data/data.db | cut -f1)) — will copy."
+else
+    echo "WARNING: ./data/data.db is missing; servers DB state will start empty."
+fi
+echo
+
 echo "Stopping the stack..."
 docker compose down || true
 
 echo "Creating mc-data volume (no-op if it already exists)..."
 docker volume create mc-data >/dev/null
 
-echo "Copying ./data into mc-data via an alpine helper container..."
+echo "Copying ./data into mc-data (data.db, servers/, infrared/, caches) via alpine..."
 docker run --rm \
     -v "$(pwd)/data:/src:ro" \
     -v mc-data:/dst \
@@ -34,8 +44,12 @@ docker run --rm \
     sh -c 'cp -a /src/. /dst/ && chown -R 1000:1000 /dst/servers 2>/dev/null || true'
 
 echo
+echo "Verifying volume contents:"
+docker run --rm -v mc-data:/data alpine sh -c \
+    'ls -la /data && echo && if [ -f /data/data.db ]; then echo "data.db present ($(du -h /data/data.db | cut -f1))."; else echo "ERROR: data.db missing from volume!"; exit 1; fi'
+
+echo
 echo "Migration complete."
-echo "  Verify:  docker run --rm -v mc-data:/data alpine ls -la /data"
 echo "  Backup:  keep ./data around until you've confirmed servers start."
 echo "  Remove:  once verified, 'rm -rf ./data' to reclaim disk."
 echo
