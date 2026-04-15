@@ -18,7 +18,7 @@ from api.velocity import reload_velocity_config
 DOCKER_NETWORK = "mc-net"
 
 # Default server image
-DEFAULT_SERVER_IMAGE = "openjdk:21-jre-slim"
+DEFAULT_SERVER_IMAGE = "eclipse-temurin:21-jre"
 
 
 def ensure_network(client):
