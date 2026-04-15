@@ -12,7 +12,7 @@ import api.post.user.reset_password
 import api.post.user.create
 import api.post.user.delete
 import api.db
-import api.velocity
+import api.infrared
 import api.auth
 
 
@@ -114,12 +114,12 @@ class Handler(SimpleHTTPRequestHandler):
                 server["status"] = "UNKNOWN"
             return self._send_json(200, server)
 
-        # --- API: Velocity status ---
-        elif self.path == "/api/velocity/status":
+        # --- API: Proxy (Infrared) status ---
+        elif self.path == "/api/proxy/status":
             import docker as docker_mod
             try:
                 client = docker_mod.from_env()
-                container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
+                container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
                 running = container.status == "running"
                 return self._send_json(200, {"running": running, "container": container.status})
             except docker_mod.errors.NotFound:
@@ -319,29 +319,39 @@ class Handler(SimpleHTTPRequestHandler):
                 res = api.post.user.reset_password.reset_password(username, new_password)
                 return self._send_json(200, {"message": res})
 
-        # --- Velocity control (Admin Only) ---
-        elif self.path.startswith("/api/velocity/"):
+        # --- Proxy (Infrared) control (Admin Only) ---
+        elif self.path.startswith("/api/proxy/"):
             if user != 'admin':
                 return self._send_json(403, {"error": "Admin required"})
-                
-            if self.path == "/api/velocity/start":
-                api.velocity.download_velocity()
-                api.velocity.reload_velocity_config()
-                return self._send_json(200, {"message": "Velocity container restarted."})
 
-            elif self.path == "/api/velocity/stop":
+            if self.path == "/api/proxy/start":
+                # Infrared is managed by docker-compose; this just ensures the
+                # config is up to date and nudges the container back to running
+                # if it's stopped.
+                api.infrared.reload_proxy_config()
                 import docker as docker_mod
                 try:
                     client = docker_mod.from_env()
-                    container = client.containers.get(api.velocity.VELOCITY_CONTAINER_NAME)
-                    container.stop(timeout=10)
-                    return self._send_json(200, {"message": "Velocity container stopped."})
+                    container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+                    if container.status != "running":
+                        container.start()
+                    return self._send_json(200, {"message": "Infrared container started; config reloaded."})
                 except docker_mod.errors.NotFound:
-                    return self._send_json(200, {"message": "Velocity container not found."})
+                    return self._send_json(200, {"message": "Infrared config written; container not found (start via docker-compose)."})
 
-            elif self.path == "/api/velocity/reload":
-                api.velocity.reload_velocity_config()
-                return self._send_json(200, {"message": "Velocity config reloaded"})
+            elif self.path == "/api/proxy/stop":
+                import docker as docker_mod
+                try:
+                    client = docker_mod.from_env()
+                    container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+                    container.stop(timeout=10)
+                    return self._send_json(200, {"message": "Infrared container stopped."})
+                except docker_mod.errors.NotFound:
+                    return self._send_json(200, {"message": "Infrared container not found."})
+
+            elif self.path == "/api/proxy/reload":
+                api.infrared.reload_proxy_config()
+                return self._send_json(200, {"message": "Infrared config reloaded"})
 
         else:
             return self.send_error(404, "Not Found")

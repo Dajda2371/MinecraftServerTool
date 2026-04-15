@@ -70,14 +70,15 @@ if __name__ == "__main__":
     from api.db import init_db
     init_db()
 
-    # Download Velocity JAR and generate config (shared with the velocity container via volume)
+    # Generate Infrared config (shared with the infrared container via volume).
+    # Infrared watches the config files and hot-reloads, so this is all we need.
     try:
-        from api.velocity import generate_velocity_toml, download_velocity
-        download_velocity()
-        generate_velocity_toml()
-        print("[Startup] Velocity configuration generated.")
+        from api.infrared import generate_infrared_config, generate_proxy_files
+        generate_infrared_config()
+        generate_proxy_files()
+        print("[Startup] Infrared configuration generated.")
     except Exception as e:
-        print(f"[Startup] Warning: Could not generate Velocity config: {e}")
+        print(f"[Startup] Warning: Could not generate Infrared config: {e}")
 
     class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True
