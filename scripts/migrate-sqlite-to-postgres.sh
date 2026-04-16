@@ -35,6 +35,12 @@ for i in $(seq 1 30); do
     fi
 done
 
+echo "[migrate] Building / rebuilding mc-tool image..."
+# --build ensures the image is rebuilt so it has the latest scripts/
+# and psycopg2-binary installed. Without this, an older cached image
+# may lack the migration script or the Postgres driver.
+$COMPOSE build mc-tool
+
 echo "[migrate] Running Python migrator inside the mc-tool image..."
 # --rm so we don't leave a stopped container behind; use `run` so the
 # main mc-tool service isn't started yet (we migrate, then `./build.sh up`).

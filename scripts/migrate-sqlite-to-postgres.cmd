@@ -38,6 +38,16 @@ timeout /t 1 /nobreak >nul
 goto wait_loop
 :wait_done
 
+echo [migrate] Building / rebuilding mc-tool image...
+REM --build ensures the image is rebuilt so it has the latest scripts\
+REM and psycopg2-binary installed. Without this, an older cached image
+REM may lack the migration script or the Postgres driver.
+docker compose build mc-tool
+if errorlevel 1 (
+    echo [migrate] ERROR: failed to build mc-tool image.
+    exit /b 1
+)
+
 echo [migrate] Running Python migrator inside the mc-tool image...
 docker compose run --rm --no-deps mc-tool python scripts/migrate_sqlite_to_postgres.py
 if errorlevel 1 (
