@@ -8,6 +8,12 @@
 #       • Generates Infrared proxy config from the database
 #       • Spawns child containers via Docker socket
 #
+#   - postgres (Database Container):
+#       • Runs PostgreSQL 16 with the mcserver database
+#       • Stores servers, users, and sessions
+#       • Separate named volume (mc-postgres-data) for durability
+#       • Only reachable on the internal mc-net network; no host port
+#
 #   - infrared (Proxy Container):
 #       • Runs Infrared (github.com/haveachin/infrared) for hostname-based
 #         routing on port 25565
@@ -26,13 +32,16 @@
 #       • No published ports
 #
 # Storage:
-#   - mc-data: Docker named volume holding the entire app data tree
-#     (database, per-server directories, Infrared config). Replaces the
-#     old ./data bind mount so that POSIX permissions work consistently
-#     across Linux, macOS (VirtioFS), and Windows (WSL2) Docker Desktop.
-#     Back it up with:
+#   - mc-data: Docker named volume holding the per-server directories and
+#     Infrared config. Replaces the old ./data bind mount so POSIX
+#     permissions work consistently across Linux, macOS (VirtioFS), and
+#     Windows (WSL2) Docker Desktop.
+#   - mc-postgres-data: Docker named volume holding the PostgreSQL cluster.
+#     Back both up periodically:
 #       docker run --rm -v mc-data:/data -v "$PWD/backups:/backup" alpine \
 #         tar czf /backup/mc-data-$(date +%F).tar.gz -C /data .
+#       docker compose exec postgres pg_dump -U mcserver mcserver \
+#         > backups/mcserver-$(date +%F).sql
 #
 # Network:
 #   - mc-net: Internal Docker network connecting all containers
@@ -42,6 +51,10 @@
 #   - Each subdomain (e.g., survival.mc.example.com) must point to host IP
 #   - Players connect to hostname:25565, Infrared routes to correct backend
 #
+# Credentials:
+#   - POSTGRES_PASSWORD defaults to "mcserver" for dev. Override it in
+#     production via an .env file next to this compose file, e.g.:
+#       POSTGRES_PASSWORD=your-strong-password
 # ============================================================================
 
 services:
@@ -51,6 +64,12 @@ services:
     ports:
       # Web management interface (admin only, optional)
       - "8000:8000"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mcserver
+      POSTGRES_USER: mcserver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcserver}
     volumes:
       # Docker socket — allows mc-tool to create/control child containers
       - /var/run/docker.sock:/var/run/docker.sock
@@ -58,6 +77,27 @@ services:
       - mc-data:/app/data
     networks:
       - mc-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mc-postgres
+    environment:
+      POSTGRES_DB: mcserver
+      POSTGRES_USER: mcserver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcserver}
+    volumes:
+      - mc-postgres-data:/var/lib/postgresql/data
+    networks:
+      - mc-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcserver -d mcserver"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   infrared:
@@ -93,6 +133,7 @@ services:
 
 volumes:
   mc-data:
+  mc-postgres-data:
 
 networks:
   mc-net:

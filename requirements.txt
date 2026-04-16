@@ -2,3 +2,4 @@ prompt_toolkit
 mcrcon
 requests
 docker>=7.1.0
+psycopg2-binary>=2.9
