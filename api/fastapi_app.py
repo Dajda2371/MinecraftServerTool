@@ -512,8 +512,29 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
             sock.send(payload)
         else:
             sock.write(payload)
-            
+
         sock.close()
+
+        # If the user typed `stop`, the server will shut itself down.
+        # Wait for the container to exit, then merge DB commands into
+        # latest.log so they survive the next-startup log rotation.
+        if command.strip().lower() == "stop":
+            def _wait_and_inject(container_obj, srv_name):
+                try:
+                    container_obj.wait()
+                except Exception as wait_err:
+                    print(f"[Console Stop] Wait error for '{srv_name}': {wait_err}")
+                try:
+                    api.post.server.stop.inject_commands_into_log(srv_name)
+                except Exception as inj_err:
+                    print(f"[Console Stop] Inject error for '{srv_name}': {inj_err}")
+
+            threading.Thread(
+                target=_wait_and_inject,
+                args=(container, name),
+                daemon=True,
+            ).start()
+
         return {"response": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute command on stdin: {str(e)}")
@@ -623,24 +644,29 @@ def read_latest_log_tail(server_name, max_lines=400):
     # --- 1. Read the tail of latest.log  (priority=1 — appears after commands) ---
     # Each entry: (time_str, priority, raw_line)
     entries = []
+    existing_lines = set()
     if os.path.exists(log_path):
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                 tail = deque(f, maxlen=max_lines)
             ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
             for raw in tail:
+                existing_lines.add(raw)
                 m = ts_re.match(raw)
                 entries.append((m.group(1) if m else "00:00:00", 1, raw))
         except Exception as e:
             return f"Error reading log file: {e}"
 
     # --- 2. Fetch DB commands  (priority=0 — appears before server response) ---
+    # Skip ones already present in latest.log (injected on previous stop).
     try:
         cmds = api.db.get_console_commands(server_name, limit=max_lines)
         for c in cmds:
             local_dt = c["sent_at"].astimezone()
             ts = local_dt.strftime("%H:%M:%S")
             line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
+            if line in existing_lines:
+                continue
             entries.append((ts, 0, line))
     except Exception as e:
         print(f"[Console] Warning: could not load DB commands: {e}")
