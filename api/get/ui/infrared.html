@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrared Proxy Routes — MC Server Manager</title>
+    <meta name="description" content="Manage and inspect Infrared connection-level reverse proxy routes.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .routes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: var(--space-lg);
+            margin-top: var(--space-xl);
+        }
+        .route-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            transition: all var(--duration-normal) var(--ease);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+        .route-card:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        .route-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-subtle);
+            padding-bottom: var(--space-sm);
+        }
+        .route-file {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--accent-hover);
+            font-weight: 500;
+        }
+        .route-content-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm);
+            padding: var(--space-md);
+            margin-top: var(--space-sm);
+            max-height: 160px;
+            overflow-y: auto;
+        }
+        .route-content-box pre {
+            margin: 0;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            line-height: 1.4;
+        }
+        .btn-back-header {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color var(--duration-fast);
+        }
+        .btn-back-header:hover {
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header id="app-header">
+        <div class="header-left">
+            <a href="/" class="btn-back-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                Back to Servers
+            </a>
+            <div class="logo" style="margin-left: 20px;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <h1 style="font-size: 1rem;">Infrared Proxy Routes</h1>
+            </div>
+        </div>
+        <div class="header-right">
+            <nav class="top-nav">
+                <div class="user-pill">
+                    <span id="current-user-badge">Admin</span>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="app-main">
+        <section id="toolbar" style="margin-bottom: var(--space-xl);">
+            <div>
+                <h2>Proxy Configurations</h2>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">Real-time hostname routing configurations auto-reloaded by haveachin/infrared</p>
+            </div>
+            <button class="btn btn-primary" onclick="reloadInfraredConfig()" id="btn-reload-proxy">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                Reload Config
+            </button>
+        </section>
+
+        <!-- Routes Grid -->
+        <section id="routes-container">
+            <div id="routes-list" class="routes-grid">
+                <!-- Dynamically populated -->
+            </div>
+            <div id="routes-empty" class="empty-state" style="display:none;">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                <p>No active proxy routes</p>
+                <span>Add subdomains or hostnames to your server allocations to generate routes.</span>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script>
+        // Check Admin Auth and Load routes
+        let currentUser = null;
+
+        async function apiFetch(endpoint, method = 'GET', data = null) {
+            const opts = {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+            };
+            if (data) {
+                opts.body = JSON.stringify(data);
+            }
+            const resp = await fetch(endpoint, opts);
+            const json = await resp.json();
+            if (resp.status === 401) {
+                window.location.href = '/login.html';
+                throw new Error('Please log in.');
+            }
+            if (!resp.ok) {
+                throw new Error(json.error || `HTTP ${resp.status}`);
+            }
+            return json;
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast--${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                if (toast.parentNode) toast.parentNode.removeChild(toast);
+            }, 4000);
+        }
+
+        async function checkAuth() {
+            try {
+                currentUser = await apiFetch('/api/auth/me');
+                document.getElementById('current-user-badge').textContent = currentUser.username;
+                if (currentUser.username !== 'admin') {
+                    alert('Access denied: Admin required');
+                    window.location.href = '/';
+                    return;
+                }
+                await loadRoutes();
+            } catch (err) {
+                window.location.href = '/login.html';
+            }
+        }
+
+        async function loadRoutes() {
+            try {
+                const data = await apiFetch('/api/proxy/routes');
+                const routes = data.routes || [];
+                renderRoutes(routes);
+            } catch (err) {
+                console.error('Failed to load proxy routes:', err);
+                showToast(err.message, 'error');
+            }
+        }
+
+        function renderRoutes(routes) {
+            const list = document.getElementById('routes-list');
+            const empty = document.getElementById('routes-empty');
+
+            if (routes.length === 0) {
+                list.style.display = 'none';
+                empty.style.display = 'flex';
+                return;
+            }
+
+            list.style.display = 'grid';
+            empty.style.display = 'none';
+
+            list.innerHTML = routes.map((r, i) => `
+                <div class="route-card" style="animation-delay: ${i * 0.05}s">
+                    <div class="route-header">
+                        <span class="route-file">${escapeHtml(r.file)}</span>
+                        <span class="card-status-badge badge-running" style="font-size: 0.65rem;">
+                            <span class="badge-dot"></span>
+                            active
+                        </span>
+                    </div>
+                    <div class="card-details" style="margin-bottom: 0;">
+                        <div class="detail-item" style="grid-column: span 2;">
+                            <span class="detail-label">Domain</span>
+                            <span class="detail-value" style="font-size: 0.9rem; color: var(--text-primary); font-weight: 500;">${escapeHtml(r.domain)}</span>
+                        </div>
+                        <div class="detail-item" style="grid-column: span 2; margin-top: var(--space-xs);">
+                            <span class="detail-label">Backend Address</span>
+                            <span class="detail-value" style="color: var(--accent-hover);">${escapeHtml(r.address)}</span>
+                        </div>
+                    </div>
+                    <div class="detail-label" style="margin-top: var(--space-xs);">Raw YAML Config</div>
+                    <div class="route-content-box">
+                        <pre><code>${escapeHtml(r.content)}</code></pre>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function reloadInfraredConfig() {
+            const btn = document.getElementById('btn-reload-proxy');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Reloading...';
+            try {
+                showToast('Reloading Infrared proxy configuration...', 'info');
+                const data = await apiFetch('/api/proxy/reload', 'POST');
+                showToast(data.message || 'Config reloaded successfully!', 'success');
+                await loadRoutes();
+            } catch (err) {
+                showToast(err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Reload Config
+                `;
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        document.addEventListener('DOMContentLoaded', checkAuth);
+    </script>
+</body>
+</html>
