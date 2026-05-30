@@ -491,9 +491,8 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
         # 2. Write the CMD line directly into latest.log. The JVM also writes
         #    to this file via log4j with O_APPEND, so a small (<PIPE_BUF) append
         #    from us interleaves atomically at line boundaries. The streaming
-        #    worker will pick the line up and push it to clients — no separate
-        #    socket emit needed, and no inject/rewrite step that would yank
-        #    the streamer's file offset and produce mid-line fragments.
+        #    worker polls the file and pushes a full snapshot to clients on any
+        #    change — no per-line socket emit, no client-side appending.
         ts = datetime.now().strftime("%H:%M:%S")
         cmd_line = f"[{ts}] [Console/CMD]: {command}\n"
         log_path = f"data/servers/{name}/logs/latest.log"
@@ -503,20 +502,18 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
                     f.write(cmd_line)
             except Exception as write_err:
                 print(f"[Console] Could not append CMD line to {log_path}: {write_err}")
-                # Fall back so the UI still sees the command
-                await sio.emit(
-                    "console_append",
-                    {"name": name, "line": cmd_line},
-                    room=f"console:{name}",
-                )
-        else:
-            # No log file yet (server still booting) — emit live so the UI
-            # at least shows what was typed.
+
+        # Push an immediate snapshot so the CMD line shows without waiting
+        # for the polling worker's next tick.
+        try:
+            snapshot = read_latest_log_tail(name)
             await sio.emit(
-                "console_append",
-                {"name": name, "line": cmd_line},
+                "console_init",
+                {"name": name, "logs": snapshot},
                 room=f"console:{name}",
             )
+        except Exception as snap_err:
+            print(f"[Console] Snapshot emit error: {snap_err}")
 
         # 3. Send the command to container stdin — same path for every command,
         #    including `stop`. Sending it via stdin lets Minecraft run its
@@ -748,54 +745,47 @@ def latest_log_stream_worker(server_name, loop_obj):
     log_path = f"data/servers/{server_name}/logs/latest.log"
     print(f"[Console Stream] Starting stream for {server_name} from {log_path}")
 
-    current_file = None
-    current_inode = None
-    # Holds bytes read before a terminating newline arrived. Emitting a partial
-    # line would let a live CMD emit interleave inside a server log line.
-    pending = ""
+    last_size = -1
+    last_inode = -1
+    last_existed = False
 
     while server_name in active_consoles:
         try:
-            if current_file is None:
-                if os.path.exists(log_path):
-                    current_file = open(log_path, "r", encoding="utf-8", errors="ignore")
-                    current_file.seek(0, 2)  # Seek to the end
-                    current_inode = os.fstat(current_file.fileno()).st_ino
-                else:
-                    time.sleep(1)
-                    continue
-
-            chunk = current_file.readline()
-            if chunk:
-                pending += chunk
-                if pending.endswith("\n"):
+            if os.path.exists(log_path):
+                st = os.stat(log_path)
+                size = st.st_size
+                inode = st.st_ino
+                if not last_existed or size != last_size or inode != last_inode:
+                    last_size = size
+                    last_inode = inode
+                    last_existed = True
+                    snapshot = read_latest_log_tail(server_name)
                     asyncio.run_coroutine_threadsafe(
-                        sio.emit("console_append", {"name": server_name, "line": pending}, room=f"console:{server_name}"),
-                        loop_obj
+                        sio.emit(
+                            "console_init",
+                            {"name": server_name, "logs": snapshot},
+                            room=f"console:{server_name}",
+                        ),
+                        loop_obj,
                     )
-                    pending = ""
             else:
-                try:
-                    if os.path.exists(log_path):
-                        new_inode = os.stat(log_path).st_ino
-                        if new_inode != current_inode:
-                            print(f"[Console Stream] Log rotation detected for {server_name}")
-                            current_file.close()
-                            current_file = None
-                            current_inode = None
-                            pending = ""  # discard any half-line from the rotated file
-                            continue
-                except FileNotFoundError:
-                    pass
-                time.sleep(0.1)
+                if last_existed or last_size != -1:
+                    last_existed = False
+                    last_size = -1
+                    last_inode = -1
+                    snapshot = read_latest_log_tail(server_name)
+                    asyncio.run_coroutine_threadsafe(
+                        sio.emit(
+                            "console_init",
+                            {"name": server_name, "logs": snapshot},
+                            room=f"console:{server_name}",
+                        ),
+                        loop_obj,
+                    )
+            time.sleep(0.3)
         except Exception as e:
             print(f"[Console Stream Error] {e}")
-            if current_file:
-                current_file.close()
             time.sleep(1)
-
-    if current_file:
-        current_file.close()
 
 @sio.event
 async def connect(sid, environ):

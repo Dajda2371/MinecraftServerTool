@@ -19,38 +19,31 @@ socket.on('servers_updated', async () => {
     }
 });
 
-const CONSOLE_PLACEHOLDERS = [
-    'No console logs found yet. Please start the server...',
-];
-
 socket.on('console_init', (data) => {
     if (activeConsoleServer && data.name === activeConsoleServer) {
         const contentArea = document.getElementById('console-logs-content');
         const container = document.querySelector('.console-logs-container');
-        contentArea.textContent = data.logs;
-        contentArea.dataset.placeholder = CONSOLE_PLACEHOLDERS.includes(data.logs) ? '1' : '';
-        if (container) {
-            container.scrollTop = container.scrollHeight;
-        }
-    }
-});
 
-socket.on('console_append', (data) => {
-    if (activeConsoleServer && data.name === activeConsoleServer) {
-        const contentArea = document.getElementById('console-logs-content');
-        const container = document.querySelector('.console-logs-container');
-        if (contentArea.dataset.placeholder === '1') {
-            contentArea.textContent = '';
-            contentArea.dataset.placeholder = '';
-        }
+        // The backend pushes the full console snapshot on every change, so
+        // we always replace the textContent — never append. Preserve scroll
+        // position: if the user is at the bottom, stick there; otherwise
+        // keep their distance from the bottom unchanged so they can read
+        // history without being yanked back down by each update.
+        let wasAtBottom = true;
+        let distanceFromBottom = 0;
         if (container) {
-            const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
-            contentArea.textContent += data.line;
-            if (isScrolledToBottom || contentArea.textContent === data.line) {
+            wasAtBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
+            distanceFromBottom = container.scrollHeight - container.scrollTop;
+        }
+
+        contentArea.textContent = data.logs;
+
+        if (container) {
+            if (wasAtBottom) {
                 container.scrollTop = container.scrollHeight;
+            } else {
+                container.scrollTop = Math.max(0, container.scrollHeight - distanceFromBottom);
             }
-        } else {
-            contentArea.textContent += data.line;
         }
     }
 });
