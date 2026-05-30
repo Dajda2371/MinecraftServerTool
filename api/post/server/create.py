@@ -50,7 +50,7 @@ def fetch_vanilla_jar_url(version):
     raise ValueError(f"Version '{version}' not found in vanilla JAR manifest.")
 
 
-def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512):
+def run_vanilla_download_container(server_name, version, jar_url, jar_filename=None, memory_mb=512):
     """
     Download the vanilla server JAR inside an ephemeral Docker container with
     the server's data folder bind-mounted at /data. Mirrors the pattern used
@@ -61,7 +61,8 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
     """
     container_name = f"mc-download-{server_name}"
     image = f"eclipse-temurin:{DEFAULT_BUILD_JAVA}-jdk"
-    jar_filename = f"vanilla-{version}.jar"
+    if jar_filename is None:
+        jar_filename = f"vanilla-{version}.jar"
 
     # Ensure volume directory exists before mounting subpath
     ensure_volume_directory(SERVER_DATA_VOLUME, f"servers/{server_name}")
@@ -530,7 +531,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         try:
             jar_name = f"forge-{mc_version}-{forge_version}-installer.jar"
             success, message, _ = run_vanilla_download_container(
-                server_name, server_version, url, memory_mb=memory_mb
+                server_name, server_version, url, jar_filename=jar_name, memory_mb=memory_mb
             )
             if not success:
                 raise RuntimeError(message)
