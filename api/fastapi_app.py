@@ -190,6 +190,10 @@ class ResetPasswordRequest(BaseModel):
     username: str
     new_password: str
 
+class CommandRequest(BaseModel):
+    name: str
+    command: str
+
 # ============================================================================
 # Auth Endpoints
 # ============================================================================
@@ -454,6 +458,39 @@ async def server_memory(data: UpdateMemoryRequest, current_user: str = Depends(g
         await sio.emit("servers_updated", {})
         return {"message": result}
 
+@fastapi_app.post("/api/server/command")
+async def execute_command(data: CommandRequest, current_user: str = Depends(get_current_user)):
+    name = data.name.strip()
+    command = data.command.strip()
+    
+    if not name or not command:
+        raise HTTPException(status_code=400, detail="name and command are required")
+        
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    import api.get.server.console
+    properties = api.get.server.console.get_server_properties(name)
+    if not properties:
+        raise HTTPException(status_code=400, detail=f"Server properties not found for {name}")
+        
+    rcon_port = int(properties.get("rcon.port", 25575))
+    rcon_password = properties.get("rcon.password", "admin")
+    
+    server_info = api.db.get_server_info(name)
+    if not server_info:
+        raise HTTPException(status_code=404, detail="Server not found in DB")
+        
+    container_name = server_info.get("container_name") or f"mc-{name}"
+    
+    try:
+        from mcrcon import MCRcon
+        with MCRcon(container_name, rcon_password, rcon_port) as rcon:
+            response = rcon.command(command)
+        return {"response": response}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to execute command: {str(e)}")
+
 # ============================================================================
 # Proxy (Infrared) Control & Status (Admin Only)
 # ============================================================================
@@ -536,6 +573,26 @@ async def proxy_reload(admin_user: str = Depends(get_admin_user)):
 # ============================================================================
 # Socket.IO Event Handlers
 # ============================================================================
+
+# Track active consoles: server_name -> {"sids": set()}
+active_consoles = {}
+
+def log_stream_worker(container_name, server_name, loop_obj):
+    import docker
+    client = docker.from_env()
+    try:
+        container = client.containers.get(container_name)
+        for line in container.logs(stream=True, tail=0, stdout=True, stderr=True):
+            if server_name not in active_consoles:
+                break
+            decoded_line = line.decode("utf-8", errors="ignore")
+            asyncio.run_coroutine_threadsafe(
+                sio.emit("console_append", {"name": server_name, "line": decoded_line}, room=f"console:{server_name}"),
+                loop_obj
+            )
+    except Exception as e:
+        print(f"[Console Stream Worker Error] {e}")
+
 @sio.event
 async def connect(sid, environ):
     # Print connection details for debugging
@@ -544,6 +601,70 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print(f"[WS Disconnect] Socket.IO client disconnected: {sid}")
+    # Clean up active consoles for this sid
+    for server_name, info in list(active_consoles.items()):
+        if sid in info["sids"]:
+            info["sids"].remove(sid)
+            if not info["sids"]:
+                active_consoles.pop(server_name, None)
+
+@sio.on("join_console")
+async def handle_join_console(sid, data):
+    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    if not server_name:
+        return
+        
+    room = f"console:{server_name}"
+    await sio.enter_room(sid, room)
+    print(f"[WS Console] Client {sid} joined console room for: {server_name}")
+    
+    server_info = api.db.get_server_info(server_name)
+    if not server_info:
+        return
+        
+    container_name = server_info.get("container_name") or f"mc-{server_name}"
+    
+    # 1. Fetch initial logs
+    import docker as docker_mod
+    client = docker_mod.from_env()
+    try:
+        container = client.containers.get(container_name)
+        initial_logs = container.logs(tail=300, stdout=True, stderr=True).decode("utf-8", errors="ignore")
+    except Exception as e:
+        initial_logs = f"Error fetching console logs: {str(e)}"
+        
+    await sio.emit("console_init", {"name": server_name, "logs": initial_logs}, room=sid)
+    
+    # 2. Check if a worker is already running for this server
+    if server_name not in active_consoles:
+        active_consoles[server_name] = {"sids": {sid}}
+        import threading
+        t = threading.Thread(
+            target=log_stream_worker,
+            args=(container_name, server_name, asyncio.get_running_loop()),
+            daemon=True
+        )
+        t.start()
+    else:
+        active_consoles[server_name]["sids"].add(sid)
+
+@sio.on("leave_console")
+async def handle_leave_console(sid, data):
+    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    if not server_name:
+        return
+        
+    room = f"console:{server_name}"
+    await sio.leave_room(sid, room)
+    print(f"[WS Console] Client {sid} left console room for: {server_name}")
+    
+    if server_name in active_consoles:
+        info = active_consoles[server_name]
+        if sid in info["sids"]:
+            info["sids"].remove(sid)
+            if not info["sids"]:
+                active_consoles.pop(server_name, None)
+
 
 @sio.on("join_creation_logs")
 async def handle_join_creation_logs(sid, data):

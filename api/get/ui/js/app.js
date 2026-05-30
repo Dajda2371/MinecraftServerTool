@@ -7,6 +7,7 @@ let servers = [];
 let deleteTargetName = null;
 let currentUser = null;
 let activeLogServer = null;
+let activeConsoleServer = null;
 
 // --- Socket.IO Real-Time Client ---
 const socket = io();
@@ -15,6 +16,27 @@ socket.on('servers_updated', async () => {
     console.log('Real-time server update received');
     if (currentUser) {
         await loadServers();
+    }
+});
+
+socket.on('console_init', (data) => {
+    if (activeConsoleServer && data.name === activeConsoleServer) {
+        const contentArea = document.getElementById('console-logs-content');
+        contentArea.textContent = data.logs;
+        contentArea.scrollTop = contentArea.scrollHeight;
+    }
+});
+
+socket.on('console_append', (data) => {
+    if (activeConsoleServer && data.name === activeConsoleServer) {
+        const contentArea = document.getElementById('console-logs-content');
+        const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 40;
+        
+        contentArea.textContent += data.line;
+        
+        if (isScrolledToBottom || contentArea.textContent === data.line) {
+            contentArea.scrollTop = contentArea.scrollHeight;
+        }
     }
 });
 
@@ -235,23 +257,28 @@ function renderServers() {
                             ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="agreeToEula('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                    Agree to EULA
+                               </button>
+                               <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                   Delete
                                </button>`
                             : isRunning
-                                ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
+                                ? `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="showConsoleModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                                       Console
+                                   </button>
+                                   <button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                                        Stop
                                    </button>`
                                 : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                        Start
+                                   </button>
+                                   <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                       Delete
                                    </button>`
-                    }
-                    ${status !== 'creating'
-                        ? `<button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
-                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                               Delete
-                           </button>`
-                        : ''
                     }
                 </div>
             </div>
@@ -627,6 +654,68 @@ async function cancelServerCreation(name) {
     }
 }
 
+// --- Console Modal ---
+function showConsoleModal(name) {
+    activeConsoleServer = name;
+    document.getElementById('console-server-name').textContent = name;
+    const contentArea = document.getElementById('console-logs-content');
+    contentArea.textContent = 'Connecting to console...';
+    document.getElementById('console-command-input').value = '';
+    
+    document.getElementById('console-modal-overlay').classList.add('is-visible');
+    
+    // Join console room via Socket.IO
+    socket.emit('join_console', { name });
+    
+    // Auto-focus input
+    setTimeout(() => {
+        document.getElementById('console-command-input').focus();
+    }, 200);
+}
+
+function hideConsoleModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('console-modal-overlay').classList.remove('is-visible');
+    
+    if (activeConsoleServer) {
+        socket.emit('leave_console', { name: activeConsoleServer });
+        activeConsoleServer = null;
+    }
+}
+
+async function sendConsoleCommand(e) {
+    e.preventDefault();
+    const inputEl = document.getElementById('console-command-input');
+    const command = inputEl.value.trim();
+    if (!command || !activeConsoleServer) return;
+    
+    // Clear input
+    inputEl.value = '';
+    
+    // Append the command to console for immediate terminal response
+    const contentArea = document.getElementById('console-logs-content');
+    const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 40;
+    
+    contentArea.textContent += `\n> ${command}\n`;
+    
+    if (isScrolledToBottom) {
+        contentArea.scrollTop = contentArea.scrollHeight;
+    }
+    
+    try {
+        const responseData = await apiFetch('/api/server/command', 'POST', { name: activeConsoleServer, command });
+        if (responseData.response) {
+            contentArea.textContent += `${responseData.response}\n`;
+        } else {
+            contentArea.textContent += `[System: Command sent successfully with empty response]\n`;
+        }
+    } catch (err) {
+        contentArea.textContent += `[Error executing command: ${err.message}]\n`;
+    }
+    
+    contentArea.scrollTop = contentArea.scrollHeight;
+}
+
 async function agreeToEula(name) {
     if (!confirm(`Do you agree to the Minecraft End User License Agreement (EULA) at https://aka.ms/MinecraftEULA to run server '${name}'?`)) {
         return;
@@ -651,6 +740,7 @@ document.addEventListener('keydown', (e) => {
         hideMemoryModal();
         hideUsersModal();
         hideLogsModal();
+        hideConsoleModal();
     }
     // Ctrl+N to create server
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {

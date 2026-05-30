@@ -911,3 +911,101 @@ body::before {
         display: none;
     }
 }
+
+/* --- Console Modal --- */
+.modal--large.console-modal {
+    max-width: 1200px;
+    width: 95vw;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-xl);
+}
+
+.console-modal-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-bottom: 0;
+    min-height: 0;
+}
+
+.console-logs-container {
+    flex: 1;
+    background-color: #0c0c10;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    overflow-y: auto;
+    min-height: 0;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+#console-logs-content {
+    color: #e4e4e7;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+}
+
+.console-command-line {
+    color: #38bdf8;
+    font-weight: 600;
+}
+
+.console-command-response {
+    color: #a1a1aa;
+}
+
+.console-command-error {
+    color: var(--red);
+    font-weight: 500;
+}
+
+#console-input-form {
+    margin-top: auto;
+}
+
+.console-input-group {
+    display: flex;
+    align-items: center;
+    background: #18181b;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-md);
+    transition: all var(--duration-fast) var(--ease);
+}
+
+.console-input-group:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.console-prompt {
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    font-weight: bold;
+    color: var(--accent);
+    margin-right: var(--space-sm);
+    user-select: none;
+}
+
+#console-command-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 12px 0;
+    color: #f4f4f5;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+#console-command-input::placeholder {
+    color: #52525b;
+}
+
