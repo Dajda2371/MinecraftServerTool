@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 import psycopg2
 from psycopg2 import errors as pg_errors
 
@@ -98,6 +99,72 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS console_commands (
+            id          SERIAL PRIMARY KEY,
+            server_name TEXT NOT NULL,
+            username    TEXT NOT NULL,
+            command     TEXT NOT NULL,
+            sent_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+    ''')
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_console_commands_server "
+        "ON console_commands (server_name, sent_at)"
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def log_console_command(server_name: str, username: str, command: str) -> None:
+    """Persist a command typed by *username* for *server_name*."""
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO console_commands (server_name, username, command) "
+        "VALUES (%s, %s, %s)",
+        (server_name, username, command),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_console_commands(server_name: str, limit: int = 400):
+    """
+    Return the last *limit* commands sent to *server_name* as a list of dicts:
+        {"command": str, "username": str, "sent_at": datetime}
+    Ordered oldest-first so they can be merged with latest.log.
+    """
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT command, username, sent_at
+        FROM (
+            SELECT command, username, sent_at
+            FROM console_commands
+            WHERE server_name = %s
+            ORDER BY sent_at DESC
+            LIMIT %s
+        ) sub
+        ORDER BY sent_at ASC
+        """,
+        (server_name, limit),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {"command": r[0], "username": r[1], "sent_at": r[2]}
+        for r in rows
+    ]
+
+
+def delete_console_commands(server_name: str) -> None:
+    """Remove all stored commands for a server (called on server delete)."""
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM console_commands WHERE server_name = %s", (server_name,))
     conn.commit()
     conn.close()
 

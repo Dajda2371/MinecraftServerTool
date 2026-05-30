@@ -422,6 +422,11 @@ async def delete_server(data: DeleteServerRequest, current_user: str = Depends(g
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = api.post.server.delete.delete_server(name, remove_data=data.remove_data)
+    # Clean up stored console commands for this server
+    try:
+        api.db.delete_console_commands(name)
+    except Exception as e:
+        print(f"[DB] Warning: could not delete console commands for '{name}': {e}")
     await sio.emit("servers_updated", {})
     return {"message": result}
 
@@ -476,25 +481,26 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     container_name = server_info.get("container_name") or f"mc-{name}"
     
     try:
-        # 1. Emit the command to the console room immediately as a "> command" line
-        #    so users see their input reflected back without corrupting latest.log
-        #    (Minecraft's async log4j keeps latest.log open and overwrites appended content)
+        # 1. Persist the command to PostgreSQL so it survives console re-opens
+        try:
+            api.db.log_console_command(name, current_user, command)
+        except Exception as db_err:
+            print(f"[Console DB Write Error] {db_err}")
+
+        # 2. Emit " > command" to the live console room immediately
+        #    (Minecraft's log4j keeps latest.log open so we cannot append there)
         await sio.emit(
             "console_append",
             {"name": name, "line": f"> {command}\n"},
             room=f"console:{name}"
         )
 
-        # 2. Send the command to container stdin
+        # 3. Send the command to container stdin
         import docker
         client = docker.from_env()
         container = client.containers.get(container_name)
         
-        # Attach to the container's stdin socket
-        # Note: We must have stdin_open=True enabled when running the container
         sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
-        
-        # Prepare payload with newline
         payload = (command + "\n").encode("utf-8")
         
         if hasattr(sock, '_sock'):
@@ -596,17 +602,60 @@ async def proxy_reload(admin_user: str = Depends(get_admin_user)):
 active_consoles = {}
 
 def read_latest_log_tail(server_name, max_lines=400):
+    """
+    Build the initial console snapshot shown when a client opens the console.
+
+    Strategy: merge the last `max_lines` lines from `latest.log` (the
+    Minecraft server log) with the command history stored in PostgreSQL,
+    sorted chronologically.
+
+    Both sources carry wall-clock timestamps so we can interleave them:
+    - latest.log lines look like  ``[HH:MM:SS] [Thread/Level]: …``
+    - DB commands are stored with a full TIMESTAMPTZ; we format them as
+      ``[HH:MM:SS] [Console/CMD]: > command`` to match the log style.
+    """
+    from datetime import timezone
+    import re
+
     log_path = f"data/servers/{server_name}/logs/latest.log"
-    if not os.path.exists(log_path):
-        return "No console logs found yet. Please start the server..."
-    
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+
+    # --- 1. Read the tail of latest.log ---
+    log_lines = []  # list of (time_str, raw_line)
+    if os.path.exists(log_path):
+        try:
             from collections import deque
-            lines = deque(f, maxlen=max_lines)
-            return "".join(lines)
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                tail = deque(f, maxlen=max_lines)
+            ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
+            for raw in tail:
+                m = ts_re.match(raw)
+                log_lines.append((m.group(1) if m else "00:00:00", raw))
+        except Exception as e:
+            return f"Error reading log file: {e}"
+    
+    if not log_lines:
+        # No log yet — still show any stored commands so the user sees history
+        pass
+
+    # --- 2. Fetch DB commands and format them like log lines ---
+    cmd_lines = []  # list of (time_str, formatted_line)
+    try:
+        cmds = api.db.get_console_commands(server_name, limit=max_lines)
+        for c in cmds:
+            # sent_at is a tz-aware datetime from psycopg2
+            local_dt = c["sent_at"].astimezone()
+            ts = local_dt.strftime("%H:%M:%S")
+            line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
+            cmd_lines.append((ts, line))
     except Exception as e:
-        return f"Error reading log file: {e}"
+        print(f"[Console] Warning: could not load DB commands: {e}")
+
+    if not log_lines and not cmd_lines:
+        return "No console logs found yet. Please start the server..."
+
+    # --- 3. Merge by timestamp string (HH:MM:SS), stable sort keeps file order ---
+    merged = sorted(log_lines + cmd_lines, key=lambda x: x[0])
+    return "".join(line for _, line in merged)
 
 def latest_log_stream_worker(server_name, loop_obj):
     import os
