@@ -150,7 +150,7 @@ def reload_proxy_config():
         container = client.containers.get(INFRARED_CONTAINER_NAME)
         if container.status == "running":
             print(f"[Infrared] Restarting '{INFRARED_CONTAINER_NAME}' to apply configuration changes...")
-            container.restart()
+            container.restart(timeout=1)
             print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' restarted successfully.")
         else:
             print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' is {container.status}; "
