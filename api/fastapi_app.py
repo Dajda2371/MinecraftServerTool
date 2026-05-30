@@ -645,25 +645,37 @@ def read_latest_log_tail(server_name, max_lines=400):
     # Each entry: (time_str, priority, raw_line)
     entries = []
     existing_lines = set()
+    first_log_ts = None
+    ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
     if os.path.exists(log_path):
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                 tail = deque(f, maxlen=max_lines)
-            ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
             for raw in tail:
                 existing_lines.add(raw)
                 m = ts_re.match(raw)
-                entries.append((m.group(1) if m else "00:00:00", 1, raw))
+                if m:
+                    ts_val = m.group(1)
+                    if first_log_ts is None:
+                        first_log_ts = ts_val
+                    entries.append((ts_val, 1, raw))
+                else:
+                    entries.append(("00:00:00", 1, raw))
         except Exception as e:
             return f"Error reading log file: {e}"
 
     # --- 2. Fetch DB commands  (priority=0 — appears before server response) ---
-    # Skip ones already present in latest.log (injected on previous stop).
+    # Skip ones already present in latest.log (injected on previous stop),
+    # and skip any whose HH:MM:SS is before the first timestamped line in
+    # latest.log — those belong to a previous session that has since been
+    # rotated out.
     try:
         cmds = api.db.get_console_commands(server_name, limit=max_lines)
         for c in cmds:
             local_dt = c["sent_at"].astimezone()
             ts = local_dt.strftime("%H:%M:%S")
+            if first_log_ts is not None and ts < first_log_ts:
+                continue
             line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
             if line in existing_lines:
                 continue

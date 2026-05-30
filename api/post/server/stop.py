@@ -49,9 +49,16 @@ def inject_commands_into_log(server_name):
     existing_lines = set(log_lines)
 
     entries = []
+    first_log_ts = None
     for raw in log_lines:
         m = ts_re.match(raw)
-        entries.append((m.group(1) if m else "00:00:00", 1, raw))
+        if m:
+            ts_val = m.group(1)
+            if first_log_ts is None:
+                first_log_ts = ts_val
+            entries.append((ts_val, 1, raw))
+        else:
+            entries.append(("00:00:00", 1, raw))
 
     added = 0
     for c in cmds:
@@ -59,6 +66,8 @@ def inject_commands_into_log(server_name):
         if abs((local - anchor).total_seconds()) > 86400:
             continue
         ts = local.strftime("%H:%M:%S")
+        if first_log_ts is not None and ts < first_log_ts:
+            continue
         line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
         if line in existing_lines:
             continue
