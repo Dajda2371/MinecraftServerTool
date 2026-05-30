@@ -476,14 +476,14 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     container_name = server_info.get("container_name") or f"mc-{name}"
     
     try:
-        # 1. Write the command to latest.log (with > prefix and no trailing newline duplication)
-        log_path = f"data/servers/{name}/logs/latest.log"
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"> {command}\n")
-        except Exception as log_err:
-            print(f"[Console Log Write Error] {log_err}")
+        # 1. Emit the command to the console room immediately as a "> command" line
+        #    so users see their input reflected back without corrupting latest.log
+        #    (Minecraft's async log4j keeps latest.log open and overwrites appended content)
+        await sio.emit(
+            "console_append",
+            {"name": name, "line": f"> {command}\n"},
+            room=f"console:{name}"
+        )
 
         # 2. Send the command to container stdin
         import docker

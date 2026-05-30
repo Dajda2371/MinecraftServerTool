@@ -5,33 +5,46 @@ Minecraft server data lives in the ``mc-data`` Docker named volume at
 ``servers/<name>/``. Child containers (download, build, run) mount that
 subpath at ``/data`` so each server only sees its own files and the UID
 boundary is enforced by Docker rather than by directory permissions.
-
-docker-py 7.1.0 does not yet expose ``subpath`` as a keyword argument to
-``Mount`` (it landed on ``main`` after release). The engine API supports
-the field via ``VolumeOptions.Subpath`` since Docker 25.0 / API 1.45,
-so we set it on the returned ``Mount`` dict directly — ``Mount``
-subclasses ``dict`` and is serialised verbatim into the HostConfig.
 """
 
 from docker.types import Mount
+import os
 
-SERVER_DATA_VOLUME = "mc-data"
+def get_server_data_volume():
+    """
+    Find the actual volume name mounted to /app/data in this container.
+    Falls back to 'mc-data' if not running in Docker or unable to inspect.
+    """
+    import socket
+    import docker
+    try:
+        client = docker.from_env()
+        hostname = socket.gethostname()
+        me = client.containers.get(hostname)
+        for mount in me.attrs.get("Mounts", []):
+            if mount.get("Destination") == "/app/data":
+                if mount.get("Type") == "volume" and mount.get("Name"):
+                    return mount.get("Name")
+    except Exception:
+        pass
+    return "mc-data"
+
+SERVER_DATA_VOLUME = get_server_data_volume()
 
 
 def volume_subpath_mount(target, volume_name, subpath, read_only=False):
     """Return a Mount that binds ``volume_name[/subpath]`` at ``target``."""
-    mount = Mount(
+    import docker
+    client = docker.from_env()
+    vol = client.volumes.get(volume_name)
+    host_path = os.path.join(vol.attrs["Mountpoint"], subpath)
+    os.makedirs(host_path, exist_ok=True)
+    return Mount(
         target=target,
-        source=volume_name,
-        type="volume",
+        source=host_path,
+        type="bind",
         read_only=read_only,
     )
-    if subpath:
-        # Merge with any VolumeOptions Mount already set (currently none).
-        opts = mount.get("VolumeOptions", {})
-        opts["Subpath"] = subpath
-        mount["VolumeOptions"] = opts
-    return mount
 
 
 def server_data_mount(server_name, target="/data", read_only=False):
