@@ -113,7 +113,6 @@ def stop_server(server_name):
             print(f"[Docker] Stopping container '{container_name}'...")
             container.stop(timeout=30)
             print(f"[Docker] Container '{container_name}' stopped.")
-            inject_commands_into_log(server_name)
             return f"Server '{server_name}' stopped successfully."
         else:
             return f"Server '{server_name}' is not running (status: {container.status})."

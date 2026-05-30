@@ -488,44 +488,39 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
         except Exception as db_err:
             print(f"[Console DB Write Error] {db_err}")
 
-        # 2. Emit the same formatted line used by read_latest_log_tail so the
-        #    live console and the reopened-console view are byte-for-byte identical.
-        #    Format: [HH:MM:SS] [Console/CMD]: command
+        # 2. Write the CMD line directly into latest.log. The JVM also writes
+        #    to this file via log4j with O_APPEND, so a small (<PIPE_BUF) append
+        #    from us interleaves atomically at line boundaries. The streaming
+        #    worker will pick the line up and push it to clients — no separate
+        #    socket emit needed, and no inject/rewrite step that would yank
+        #    the streamer's file offset and produce mid-line fragments.
         ts = datetime.now().strftime("%H:%M:%S")
-        await sio.emit(
-            "console_append",
-            {"name": name, "line": f"[{ts}] [Console/CMD]: {command}\n"},
-            room=f"console:{name}"
-        )
+        cmd_line = f"[{ts}] [Console/CMD]: {command}\n"
+        log_path = f"data/servers/{name}/logs/latest.log"
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(cmd_line)
+            except Exception as write_err:
+                print(f"[Console] Could not append CMD line to {log_path}: {write_err}")
+                # Fall back so the UI still sees the command
+                await sio.emit(
+                    "console_append",
+                    {"name": name, "line": cmd_line},
+                    room=f"console:{name}",
+                )
+        else:
+            # No log file yet (server still booting) — emit live so the UI
+            # at least shows what was typed.
+            await sio.emit(
+                "console_append",
+                {"name": name, "line": cmd_line},
+                room=f"console:{name}",
+            )
 
-        # 3a. `stop` typed in the console: route through the same Docker stop
-        #     path the Stop button uses. Sending "stop" to stdin would let
-        #     Minecraft exit cleanly, but the container's unless-stopped
-        #     restart policy would then bring it right back up. container.stop
-        #     marks the exit as user-initiated, which suppresses the restart.
-        if command.strip().lower() == "stop":
-            def _stop_in_bg(srv_name):
-                try:
-                    api.post.server.stop.stop_server(srv_name)
-                except Exception as stop_err:
-                    print(f"[Console Stop] Error stopping '{srv_name}': {stop_err}")
-                if loop:
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            sio.emit("servers_updated", {}),
-                            loop,
-                        )
-                    except Exception as emit_err:
-                        print(f"[Console Stop] Error emitting update: {emit_err}")
-
-            threading.Thread(
-                target=_stop_in_bg,
-                args=(name,),
-                daemon=True,
-            ).start()
-            return {"response": ""}
-
-        # 3b. Any other command: send to container stdin.
+        # 3. Send the command to container stdin — same path for every command,
+        #    including `stop`. Sending it via stdin lets Minecraft run its
+        #    normal shutdown sequence and emit its usual log lines.
         import docker
         client = docker.from_env()
         container = client.containers.get(container_name)
@@ -541,6 +536,54 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
             sock.write(payload)
 
         sock.close()
+
+        # 4. For `stop`: once Minecraft has finished saving (sentinel line),
+        #    call container.stop() so Docker marks the exit as user-initiated
+        #    and the `unless-stopped` restart policy doesn't bring it back up.
+        if command.strip().lower() == "stop":
+            def _watch_and_stop(container_obj, srv_name):
+                import time as _time
+                sentinel = "ThreadedAnvilChunkStorage: All dimensions are saved"
+                watch_path = f"data/servers/{srv_name}/logs/latest.log"
+                file_pos = os.path.getsize(watch_path) if os.path.exists(watch_path) else 0
+                deadline = _time.time() + 60
+                seen = False
+                while _time.time() < deadline and not seen:
+                    try:
+                        if os.path.exists(watch_path):
+                            with open(watch_path, "r", encoding="utf-8", errors="ignore") as wf:
+                                wf.seek(file_pos)
+                                for ln in wf:
+                                    file_pos += len(ln.encode("utf-8"))
+                                    if sentinel in ln:
+                                        seen = True
+                                        break
+                    except Exception as read_err:
+                        print(f"[Stop Watch] read error for '{srv_name}': {read_err}")
+                    if not seen:
+                        _time.sleep(0.3)
+
+                try:
+                    container_obj.reload()
+                    if container_obj.status == "running":
+                        container_obj.stop(timeout=30)
+                except Exception as stop_err:
+                    print(f"[Stop Watch] stop error for '{srv_name}': {stop_err}")
+
+                if loop:
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            sio.emit("servers_updated", {}), loop,
+                        )
+                    except Exception as emit_err:
+                        print(f"[Stop Watch] emit error for '{srv_name}': {emit_err}")
+
+            threading.Thread(
+                target=_watch_and_stop,
+                args=(container, name),
+                daemon=True,
+            ).start()
+
         return {"response": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute command on stdin: {str(e)}")
