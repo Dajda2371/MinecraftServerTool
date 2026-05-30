@@ -29,19 +29,27 @@ def register_log_callback(cb):
 
 def log_message(server_name, text):
     print(f"[{server_name}] {text}")
-    # Write to local file and Named Volume (to be visible everywhere)
-    log_path = os.path.join("data", "servers", server_name, "creation.log")
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
-        
-    try:
-        # Read cumulative creation.log and write to volume
-        with open(log_path, "r", encoding="utf-8") as f:
-            full_content = f.read()
-        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/creation.log", full_content)
-    except Exception as e:
-        print(f"[Volume Log Write Error] {e}")
+    
+    # Write to log file
+    if os.path.exists("/data"):
+        log_path = "/data/creation.log"
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+        except Exception as e:
+            print(f"[Log Write Error] {e}")
+    else:
+        log_path = os.path.join("data", "servers", server_name, "creation.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+            # Read cumulative creation.log and write to volume
+            with open(log_path, "r", encoding="utf-8") as f:
+                full_content = f.read()
+            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/creation.log", full_content)
+        except Exception as e:
+            print(f"[Volume Log Write Error] {e}")
 
     if log_callback:
         try:
@@ -217,7 +225,10 @@ def download_curseforge_mods_background(server_name, html_content):
     
     log_message(server_name, f"Target: Minecraft {mc_version} / {loader_name.capitalize()}")
     
-    mods_dir = os.path.abspath(f"data/servers/{server_name}/mods")
+    if os.path.exists("/data"):
+        mods_dir = "/data/mods"
+    else:
+        mods_dir = os.path.abspath(f"data/servers/{server_name}/mods")
     os.makedirs(mods_dir, exist_ok=True)
     
     # Parse the HTML content
@@ -301,3 +312,113 @@ def download_curseforge_mods_background(server_name, html_content):
             log_message(server_name, f"  - {f}")
             
     log_message(server_name, "Mod downloads completed.")
+
+def start_mod_download_container(server_name, html_content):
+    """
+    Spawns an ephemeral Docker container using the same image as the management container
+    to parse and download mods listed in a CurseForge HTML modlist export.
+    Tails the creation.log file to stream progress in real-time to Socket.IO.
+    """
+    import socket
+    import docker
+    from api.post.server.mounts import server_data_mount, get_compose_labels, SERVER_DATA_VOLUME, write_volume_file
+    from api.post.server.create import follow_log_file
+
+    log_message(server_name, "Spawning isolated mod downloader container...")
+    
+    # 1. Write the modlist HTML to the server directory in named volume
+    write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/modlist.html", html_content)
+    
+    client = docker.from_env()
+    
+    # 2. Get the management container's own image
+    hostname = socket.gethostname()
+    try:
+        me = client.containers.get(hostname)
+        image = me.attrs['Config']['Image']
+    except Exception:
+        image = "minecraft-server-tool:latest"
+        
+    container_name = f"mc-mod-downloader-{server_name}"
+    
+    # Clean up existing container if it exists
+    try:
+        existing = client.containers.get(container_name)
+        existing.stop(timeout=2)
+        existing.remove()
+    except Exception:
+        pass
+        
+    command = f"python3 -m api.post.server.mods --server {server_name} --html-file /data/modlist.html"
+    
+    # Pass along PG environment variables
+    env = {
+        "POSTGRES_HOST": os.environ.get("POSTGRES_HOST", "postgres"),
+        "POSTGRES_PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        "POSTGRES_DB": os.environ.get("POSTGRES_DB", "mcserver"),
+        "POSTGRES_USER": os.environ.get("POSTGRES_USER", "mcserver"),
+        "POSTGRES_PASSWORD": os.environ.get("POSTGRES_PASSWORD", "mcserver"),
+    }
+    
+    container = client.containers.run(
+        image=image,
+        command=command,
+        name=container_name,
+        detach=True,
+        mounts=[server_data_mount(server_name)],
+        network="mc-net",
+        environment=env,
+        working_dir="/app",
+        labels=get_compose_labels(f"mod-downloader-{server_name}"),
+    )
+    
+    # 3. Monitor container logs in a separate thread and cleanup
+    log_path = os.path.join("data", "servers", server_name, "creation.log")
+    
+    def monitor_and_cleanup():
+        stop_event = threading.Event()
+        log_thread = threading.Thread(
+            target=follow_log_file,
+            args=(log_path, stop_event, server_name),
+            daemon=True,
+        )
+        log_thread.start()
+        
+        try:
+            container.wait()
+        except Exception:
+            pass
+            
+        time.sleep(2)
+        stop_event.set()
+        log_thread.join()
+        
+        # Remove completed container
+        try:
+            container.remove()
+        except Exception:
+            pass
+            
+        # Also clean up the temporary modlist.html file
+        try:
+            os.remove(os.path.join("data", "servers", server_name, "modlist.html"))
+        except Exception:
+            pass
+            
+    threading.Thread(target=monitor_and_cleanup, daemon=True).start()
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Mods Downloader Ephemeral Container CLI Entrypoint")
+    parser.add_argument("--server", required=True, help="Minecraft server name")
+    parser.add_argument("--html-file", required=True, help="Path to the CurseForge modlist .html file")
+    
+    args = parser.parse_args()
+    
+    # Read the html list file
+    try:
+        with open(args.html_file, "r", encoding="utf-8") as f:
+            html = f.read()
+        download_curseforge_mods_background(args.server, html)
+    except Exception as e:
+        log_message(args.server, f"❌ Ephemeral downloader failed: {e}")

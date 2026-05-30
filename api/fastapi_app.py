@@ -447,12 +447,8 @@ async def upload_modlist(name: str, file: UploadFile = File(...), current_user: 
         with open(log_path, "w", encoding="utf-8") as f:
             f.write(f"Initiated mod list download from CurseForge Modlist HTML: {file.filename}\n")
             
-        # Start in background thread
-        threading.Thread(
-            target=api.post.server.mods.download_curseforge_mods_background,
-            args=(name, html_content),
-            daemon=True
-        ).start()
+        # Start the mod downloader inside a separate container
+        api.post.server.mods.start_mod_download_container(name, html_content)
         
         # Broadcast status updates
         await sio.emit("servers_updated", {})
