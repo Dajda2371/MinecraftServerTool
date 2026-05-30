@@ -71,15 +71,15 @@ def init_db():
     cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT")
     cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS memory_limit INTEGER DEFAULT 4096")
 
-    # Check if users table is empty
-    cursor.execute("SELECT count(*) FROM users")
-    count = cursor.fetchone()[0]
-    if count == 0:
+    # Check if admin user exists in the database
+    cursor.execute("SELECT count(*) FROM users WHERE username = %s", ('admin',))
+    admin_exists = cursor.fetchone()[0] > 0
+    if not admin_exists:
         cursor.execute(
             "INSERT INTO users (username, password, memory_limit) VALUES (%s, %s, %s)",
-            ('admin', None, 8192),
+            ('admin', 'admin', 8192),
         )
-        print("Initialized default 'admin' user.")
+        print("Initialized default 'admin' user with password 'admin'.")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS sessions (
