@@ -138,30 +138,28 @@ addresses:
 
 def reload_proxy_config():
     """
-    Regenerate Infrared's config files from the database.
-
-    Infrared watches the proxies directory and hot-reloads automatically when
-    files change, so no container restart is needed in the happy path. If the
-    container is missing we silently skip — it will pick up the config when
-    it starts.
+    Regenerate Infrared's config files from the database and restart the proxy container
+    to apply the changes, since Infrared does not support dynamic hot-reloading.
     """
     generate_infrared_config()
     generate_proxy_files()
 
-    # Best-effort sanity check that the container is alive.
+    # Restart the proxy container to force reload of the configurations.
     try:
         client = docker.from_env()
         container = client.containers.get(INFRARED_CONTAINER_NAME)
-        if container.status != "running":
+        if container.status == "running":
+            print(f"[Infrared] Restarting '{INFRARED_CONTAINER_NAME}' to apply configuration changes...")
+            container.restart()
+            print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' restarted successfully.")
+        else:
             print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' is {container.status}; "
                   "config will apply when it starts.")
-        else:
-            print(f"[Infrared] Config updated; Infrared will hot-reload.")
         return True
     except docker.errors.NotFound:
         print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' not found. "
               "It will pick up the config when it starts.")
         return False
     except Exception as e:
-        print(f"[Infrared] Warning: could not check container status: {e}")
+        print(f"[Infrared] Warning: could not restart proxy container: {e}")
         return False
