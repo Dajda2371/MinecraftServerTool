@@ -22,20 +22,26 @@ socket.on('servers_updated', async () => {
 socket.on('console_init', (data) => {
     if (activeConsoleServer && data.name === activeConsoleServer) {
         const contentArea = document.getElementById('console-logs-content');
+        const container = document.querySelector('.console-logs-container');
         contentArea.textContent = data.logs;
-        contentArea.scrollTop = contentArea.scrollHeight;
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
     }
 });
 
 socket.on('console_append', (data) => {
     if (activeConsoleServer && data.name === activeConsoleServer) {
         const contentArea = document.getElementById('console-logs-content');
-        const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 40;
-        
-        contentArea.textContent += data.line;
-        
-        if (isScrolledToBottom || contentArea.textContent === data.line) {
-            contentArea.scrollTop = contentArea.scrollHeight;
+        const container = document.querySelector('.console-logs-container');
+        if (container) {
+            const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
+            contentArea.textContent += data.line;
+            if (isScrolledToBottom || contentArea.textContent === data.line) {
+                container.scrollTop = container.scrollHeight;
+            }
+        } else {
+            contentArea.textContent += data.line;
         }
     }
 });
@@ -694,12 +700,17 @@ async function sendConsoleCommand(e) {
     
     // Append the command to console for immediate terminal response
     const contentArea = document.getElementById('console-logs-content');
-    const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 40;
-    
-    contentArea.textContent += `\n> ${command}\n`;
-    
-    if (isScrolledToBottom) {
-        contentArea.scrollTop = contentArea.scrollHeight;
+    const container = document.querySelector('.console-logs-container');
+    if (container) {
+        const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
+        
+        contentArea.textContent += `\n> ${command}\n`;
+        
+        if (isScrolledToBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
+    } else {
+        contentArea.textContent += `\n> ${command}\n`;
     }
     
     try {
@@ -713,7 +724,9 @@ async function sendConsoleCommand(e) {
         contentArea.textContent += `[Error executing command: ${err.message}]\n`;
     }
     
-    contentArea.scrollTop = contentArea.scrollHeight;
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
 }
 
 async function agreeToEula(name) {

@@ -1009,3 +1009,15 @@ body::before {
     color: #52525b;
 }
 
+@media (max-width: 768px) {
+    .modal--large.console-modal {
+        width: 98vw;
+        height: 95vh;
+        padding: var(--space-md);
+    }
+    #console-logs-content {
+        font-size: 0.75rem;
+    }
+}
+
+
