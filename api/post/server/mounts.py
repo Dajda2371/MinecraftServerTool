@@ -111,3 +111,28 @@ def write_volume_file(volume_name, subpath, content):
         print(f"[Docker] Warning: failed to write volume file '{volume_name}:{subpath}': {e}")
 
 
+def get_compose_labels(service_name):
+    """
+    Generate Docker Compose labels so dynamically spawned sibling containers
+    are grouped into the same container/compose stack.
+    """
+    import socket
+    import docker
+    project_name = "minecraftservertool"  # Default fallback
+    try:
+        client = docker.from_env()
+        hostname = socket.gethostname()
+        me = client.containers.get(hostname)
+        project = me.labels.get("com.docker.compose.project")
+        if project:
+            project_name = project
+    except Exception:
+        pass
+
+    return {
+        "com.docker.compose.project": project_name,
+        "com.docker.compose.service": service_name,
+        "com.docker.compose.oneoff": "False",
+    }
+
+

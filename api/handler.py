@@ -91,6 +91,7 @@ class Handler(SimpleHTTPRequestHandler):
                     server["status"] = status.get("status", "UNKNOWN")
                 else:
                     server["status"] = "UNKNOWN"
+                server["eula_agreed"] = api.post.server.run.is_eula_agreed(server["name"])
             return self._send_json(200, {"servers": servers})
 
         elif self.path.startswith('/api/server/') and self.path.endswith('/creation-logs'):
@@ -146,6 +147,7 @@ class Handler(SimpleHTTPRequestHandler):
                 server["status"] = status.get("status", "UNKNOWN")
             else:
                 server["status"] = "UNKNOWN"
+            server["eula_agreed"] = api.post.server.run.is_eula_agreed(name)
             return self._send_json(200, server)
 
         # --- API: Proxy (Infrared) status ---
@@ -244,6 +246,19 @@ class Handler(SimpleHTTPRequestHandler):
                 daemon=True
             ).start()
             return self._send_json(202, {"message": f"Creation of '{name}' started in background."})
+
+        # --- Agree to EULA ---
+        elif self.path == "/api/server/agree-eula":
+            data = self._read_json()
+            name = data.get("name", "").strip()
+            if not name:
+                return self._send_json(400, {"error": "name is required"})
+            
+            if not check_server_access(name):
+                return self._send_json(403, {"error": "Access denied"})
+
+            result = api.post.server.run.agree_to_eula(name)
+            return self._send_json(200, {"message": result})
 
         # --- Run (start) server ---
         elif self.path == "/api/server/run":

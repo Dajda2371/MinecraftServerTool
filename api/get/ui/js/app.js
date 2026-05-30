@@ -194,15 +194,20 @@ function renderServers() {
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                Cancel
                            </button>`
-                        : isRunning
-                            ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                                   Stop
+                        : !srv.eula_agreed
+                            ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="agreeToEula('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                   Agree to EULA
                                </button>`
-                            : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                   Start
-                               </button>`
+                            : isRunning
+                                ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                                       Stop
+                                   </button>`
+                                : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                       Start
+                                   </button>`
                     }
                     ${status !== 'creating'
                         ? `<button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
@@ -604,6 +609,21 @@ async function cancelServerCreation(name) {
         await loadServers();
     } catch (err) {
         showToast(`Failed to cancel: ${err.message}`, 'error');
+    }
+}
+
+async function agreeToEula(name) {
+    if (!confirm(`Do you agree to the Minecraft End User License Agreement (EULA) at https://aka.ms/MinecraftEULA to run server '${name}'?`)) {
+        return;
+    }
+    
+    try {
+        showToast(`Agreeing to EULA for ${name}...`, 'info');
+        const data = await apiFetch('/api/server/agree-eula', 'POST', { name });
+        showToast(data.message || `EULA agreed successfully!`, 'success');
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to agree to EULA: ${err.message}`, 'error');
     }
 }
 

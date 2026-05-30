@@ -13,7 +13,7 @@ import docker
 
 from api.db import get_server_info, update_server_info
 from api.infrared import reload_proxy_config
-from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME
+from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME, get_compose_labels
 
 # Docker network name shared by all server containers and the management container
 DOCKER_NETWORK = "mc-net"
@@ -85,6 +85,10 @@ def run_server(server_name):
     if not info:
         return f"Error: Server '{server_name}' not found in database."
 
+    # Verify EULA has been agreed to before starting
+    if not is_eula_agreed(server_name):
+        return f"Error: You must agree to the EULA before starting server '{server_name}'."
+
     client = docker.from_env()
     ensure_network(client)
 
@@ -108,8 +112,7 @@ def run_server(server_name):
     except Exception as e:
         print(f"[Docker] Warning: failed to sync server.properties to volume: {e}")
 
-    # Ensure eula.txt exists inside the volume
-    write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
+    # No automatic EULA write here anymore because EULA must be explicitly agreed via the UI.
 
     # Remove existing container if any
     try:
@@ -151,6 +154,7 @@ def run_server(server_name):
             mem_limit=f"{memory_mb}m",
             # Restart policy
             restart_policy={"Name": "unless-stopped"},
+            labels=get_compose_labels(f"server-{server_name}"),
         )
 
         # Update DB with container info
@@ -224,3 +228,52 @@ def get_server_status(server_name):
             "port": info.get("port"),
             "hostname": info.get("hostname"),
         }
+
+
+def is_eula_agreed(server_name):
+    """Check if the server's eula.txt exists and has eula=true."""
+    import os
+    local_path = os.path.join("data", "servers", server_name, "eula.txt")
+    if os.path.exists(local_path):
+        try:
+            with open(local_path, "r") as f:
+                content = f.read()
+            return "eula=true" in content.lower().replace(" ", "")
+        except Exception:
+            pass
+    return False
+
+
+def agree_to_eula(server_name):
+    """
+    Update eula.txt for a server to set eula=true,
+    preserving comments and date lines exactly.
+    """
+    import os
+    
+    local_path = os.path.join("data", "servers", server_name, "eula.txt")
+    if not os.path.exists(local_path):
+        import time
+        date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
+        content = (
+            "#By changing the setting below to TRUE you are agreeing to the Minecraft EULA (https://aka.ms/MinecraftEULA).\n"
+            f"{date_str}\n"
+            "eula=true\n"
+        )
+    else:
+        with open(local_path, "r") as f:
+            lines = f.readlines()
+        
+        new_lines = []
+        for line in lines:
+            if line.strip().lower().replace(" ", "") == "eula=false":
+                # Find leading indentation or keep spacing, change eula=false to eula=true
+                leading = line[:line.lower().find("eula")]
+                new_lines.append(f"{leading}eula=true\n")
+            else:
+                new_lines.append(line)
+        content = "".join(new_lines)
+
+    # Write to local file and named volume
+    write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", content)
+    return "EULA agreed successfully."

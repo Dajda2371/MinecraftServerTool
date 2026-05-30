@@ -14,6 +14,7 @@ from api.post.server.mounts import (
     volume_subpath_mount,
     ensure_volume_directory,
     write_volume_file,
+    get_compose_labels,
 )
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
@@ -84,6 +85,7 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
         mounts=[server_data_mount(server_name)],
         working_dir="/data",
         mem_limit=f"{memory_mb}m",
+        labels=get_compose_labels(f"download-{server_name}"),
     )
 
     result = container.wait()
@@ -217,6 +219,7 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
         },
         working_dir="/data",
         mem_limit=f"{memory_mb}m",
+        labels=get_compose_labels(f"build-{server_name}"),
     )
 
     # Follow build log in real time
@@ -366,7 +369,14 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
 
-        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
+        import time
+        date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
+        eula_content = (
+            "#By changing the setting below to TRUE you are agreeing to the Minecraft EULA (https://aka.ms/MinecraftEULA).\n"
+            f"{date_str}\n"
+            "eula=false\n"
+        )
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", eula_content)
 
         server_props = (
             "server-port=25565\n"
@@ -403,7 +413,14 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
         success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
         if success:
-            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
+            import time
+            date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
+            eula_content = (
+                "#By changing the setting below to TRUE you are agreeing to the Minecraft EULA (https://aka.ms/MinecraftEULA).\n"
+                f"{date_str}\n"
+                "eula=false\n"
+            )
+            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", eula_content)
 
             # Infrared proxies at the connection level — backend handles its own
             # Mojang auth (online-mode=true).
