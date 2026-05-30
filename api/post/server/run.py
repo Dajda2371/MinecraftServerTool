@@ -13,7 +13,7 @@ import docker
 
 from api.db import get_server_info, update_server_info
 from api.infrared import reload_proxy_config
-from api.post.server.mounts import server_data_mount
+from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME
 
 # Docker network name shared by all server containers and the management container
 DOCKER_NETWORK = "mc-net"
@@ -100,11 +100,16 @@ def run_server(server_name):
     # Configure server.properties (online-mode=true, correct port)
     configure_server_properties(server_local_path, port)
 
-    # Ensure eula.txt exists
-    eula_path = os.path.join(server_local_path, "eula.txt")
-    if not os.path.exists(eula_path):
-        with open(eula_path, "w") as f:
-            f.write("eula=true\n")
+    # Sync server.properties to Docker volume
+    try:
+        with open(os.path.join(server_local_path, "server.properties"), "r") as f:
+            props_content = f.read()
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/server.properties", props_content)
+    except Exception as e:
+        print(f"[Docker] Warning: failed to sync server.properties to volume: {e}")
+
+    # Ensure eula.txt exists inside the volume
+    write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
 
     # Remove existing container if any
     try:

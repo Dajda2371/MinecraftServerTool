@@ -69,3 +69,45 @@ def ensure_volume_directory(volume_name, subpath):
     except Exception as e:
         print(f"[Docker] Warning: failed to ensure volume directory '{volume_name}:{subpath}': {e}")
 
+
+def write_volume_file(volume_name, subpath, content):
+    """
+    Write a file inside a Docker volume.
+    Also writes it locally to the 'data' directory for local environment visibility.
+    """
+    import os
+    import base64
+    import docker
+
+    # 1. Write locally
+    local_path = os.path.join("data", subpath)
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    try:
+        with open(local_path, "w") as f:
+            f.write(content)
+        print(f"[Local] Wrote file '{local_path}'.")
+    except Exception as e:
+        print(f"[Local] Warning: could not write local file '{local_path}': {e}")
+
+    # 2. Write in named volume
+    client = docker.from_env()
+    try:
+        b64_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
+        cmd = f"bash -c 'mkdir -p /vol/{os.path.dirname(subpath)} && echo {b64_content} | base64 -d > /vol/{subpath}'"
+        client.containers.run(
+            image="eclipse-temurin:21-jdk",
+            command=cmd,
+            mounts=[
+                docker.types.Mount(
+                    target="/vol",
+                    source=volume_name,
+                    type="volume"
+                )
+            ],
+            remove=True
+        )
+        print(f"[Docker] Wrote file '{volume_name}:{subpath}' inside volume.")
+    except Exception as e:
+        print(f"[Docker] Warning: failed to write volume file '{volume_name}:{subpath}': {e}")
+
+

@@ -13,6 +13,7 @@ from api.post.server.mounts import (
     server_data_mount,
     volume_subpath_mount,
     ensure_volume_directory,
+    write_volume_file,
 )
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
@@ -365,7 +366,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
 
-        os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
 
         server_props = (
             "server-port=25565\n"
@@ -374,8 +375,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             "rcon.port=25575\n"
             "online-mode=true\n"
         )
-        with open(f"data/servers/{server_name}/server.properties", "w") as f:
-            f.write(server_props)
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/server.properties", server_props)
 
         full_jar_path = f"data/servers/{server_name}/{jar_name}"
         container_name = f"mc-{server_name}"
@@ -403,7 +403,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
         success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
         if success:
-            os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
+            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", "eula=true\n")
 
             # Infrared proxies at the connection level — backend handles its own
             # Mojang auth (online-mode=true).
@@ -414,8 +414,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
                 "rcon.port=25575\n"
                 "online-mode=true\n"
             )
-            with open(f"data/servers/{server_name}/server.properties", "w") as f:
-                f.write(server_props)
+            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/server.properties", server_props)
 
             full_jar_path = f"data/servers/{server_name}/spigot{LASTBUILDTOOLSVERSION}-{server_version}.jar"
             container_name = f"mc-{server_name}"
