@@ -7,7 +7,8 @@ import docker
 import requests
 
 import api.get.lastbuildtoolsversion
-from api.db import update_server_info
+from api.db import update_server_info, get_server_info
+from api.get.forge import get_forge_versions
 from api.post.server.mounts import (
     SERVER_DATA_VOLUME,
     server_data_mount,
@@ -483,6 +484,205 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return message
 
+    elif server_type.lower() == "forge":
+        # Parse mc_version and forge_version from version e.g. "1.20.1-47.4.20"
+        parts = server_version.split("-")
+        if len(parts) == 2:
+            mc_version, forge_version = parts[0], parts[1]
+        else:
+            mc_version = server_version
+            try:
+                scraped = get_forge_versions(mc_version)
+                if scraped.get("recommended"):
+                    forge_version = scraped["recommended"]["version"]
+                elif scraped.get("latest"):
+                    forge_version = scraped["latest"]["version"]
+                else:
+                    raise ValueError("No forge version found.")
+            except Exception:
+                return f"Invalid version format '{server_version}' for Forge. Expected 'mc_version-forge_version' (e.g. 1.20.1-47.4.20)."
+
+        # Try to find the installer URL
+        try:
+            scraped = get_forge_versions(mc_version)
+            url = None
+            for v in scraped["versions"]:
+                if v["version"] == forge_version:
+                    url = v["url"]
+                    break
+            if not url:
+                if scraped.get("recommended") and scraped["recommended"]["version"] == forge_version:
+                    url = scraped["recommended"]["url"]
+                elif scraped.get("latest") and scraped["latest"]["version"] == forge_version:
+                    url = scraped["latest"]["url"]
+            if not url:
+                url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{mc_version}-{forge_version}/forge-{mc_version}-{forge_version}-installer.jar"
+        except Exception:
+            url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{mc_version}-{forge_version}/forge-{mc_version}-{forge_version}-installer.jar"
+
+        update_server_info(
+            server_name, owner, "forge", server_version, "DOWNLOADING...",
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            memory_mb=memory_mb
+        )
+
+        try:
+            jar_name = f"forge-{mc_version}-{forge_version}-installer.jar"
+            success, message, _ = run_vanilla_download_container(
+                server_name, server_version, url, memory_mb=memory_mb
+            )
+            if not success:
+                raise RuntimeError(message)
+        except Exception as e:
+            print(f"Failed to download Forge installer: {e}")
+            import shutil
+            shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
+            return "Failed to create server."
+
+        # Update DB to the installer path
+        installer_jar_path = f"data/servers/{server_name}/{jar_name}"
+        update_server_info(
+            server_name, owner, "forge", server_version, installer_jar_path,
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            memory_mb=memory_mb
+        )
+
+        print(f"Forge server '{server_name}' installer downloaded successfully.")
+        return f"Server '{server_name}' created successfully."
+
     else:
         print(f"Server type '{server_type}' is not supported yet.")
     return
+
+
+def run_forge_install_container(server_name, jar_filename, memory_mb=1024):
+    """
+    Run the Forge installer inside an ephemeral Docker container.
+    """
+    container_name = f"mc-install-{server_name}"
+    image = f"eclipse-temurin:{DEFAULT_BUILD_JAVA}-jdk"
+    
+    client = docker.from_env()
+    
+    # Remove stale install container if exists
+    try:
+        old = client.containers.get(container_name)
+        old.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+        
+    print(f"Starting install container ({image}) for Forge server '{server_name}'...")
+    
+    # Run the installer with --installServer
+    command = (
+        f'bash -c "'
+        f"java -jar {jar_filename} --installServer 2>&1 | tee /data/creation.log && "
+        f'chown -R 1000:1000 /data"'
+    )
+    
+    log_path = os.path.join("data", "servers", server_name, "creation.log")
+    
+    container = client.containers.run(
+        image=image,
+        command=command,
+        name=container_name,
+        detach=True,
+        mounts=[server_data_mount(server_name)],
+        working_dir="/data",
+        mem_limit=f"{memory_mb}m",
+        labels=get_compose_labels(f"install-{server_name}"),
+    )
+    
+    stop_event = threading.Event()
+    log_thread = threading.Thread(
+        target=follow_log_file,
+        args=(log_path, stop_event, server_name),
+        daemon=True,
+    )
+    log_thread.start()
+    
+    result = container.wait()
+    exit_code = result.get("StatusCode", -1)
+    
+    stop_event.set()
+    log_thread.join()
+    
+    try:
+        logs = container.logs().decode("utf-8", errors="replace")
+    except Exception:
+        logs = ""
+        
+    try:
+        container.remove()
+    except Exception:
+        pass
+        
+    if exit_code != 0:
+        return False, f"Forge installation failed (exit {exit_code}):\n{logs}"
+        
+    return True, "Installation successful."
+
+
+def install_forge(server_name):
+    info = get_server_info(server_name)
+    if not info:
+        raise ValueError(f"Server '{server_name}' not found.")
+        
+    installer_path = info["jar_path"]
+    jar_filename = os.path.basename(installer_path)
+    
+    # Update state in DB to INSTALLING...
+    update_server_info(
+        server_name, info["owner"], "forge", info["version"], "INSTALLING...",
+        hostname=info.get("hostname"),
+        container_name=info.get("container_name"),
+        memory_mb=info.get("memory_mb")
+    )
+    
+    success, message = run_forge_install_container(server_name, jar_filename, memory_mb=2048)
+    if not success:
+        # Revert status back to INSTALL_REQUIRED
+        update_server_info(
+            server_name, info["owner"], "forge", info["version"], installer_path,
+            hostname=info.get("hostname"),
+            container_name=info.get("container_name"),
+            memory_mb=info.get("memory_mb")
+        )
+        raise RuntimeError(message)
+        
+    # Update jar_path in DB
+    new_jar_path = installer_path.replace("-installer.jar", ".jar")
+    update_server_info(
+        server_name, info["owner"], "forge", info["version"], new_jar_path,
+        hostname=info.get("hostname"),
+        container_name=info.get("container_name"),
+        memory_mb=info.get("memory_mb")
+    )
+    
+    # Write default eula.txt
+    local_eula_path = os.path.join("data", "servers", server_name, "eula.txt")
+    if not os.path.exists(local_eula_path):
+        import time
+        date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
+        eula_content = (
+            "#By changing the setting below to TRUE you are agreeing to the Minecraft EULA (https://aka.ms/MinecraftEULA).\n"
+            f"{date_str}\n"
+            "eula=false\n"
+        )
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/eula.txt", eula_content)
+        
+    # Write default server.properties
+    local_props_path = os.path.join("data", "servers", server_name, "server.properties")
+    if not os.path.exists(local_props_path):
+        server_props = (
+            "server-port=25565\n"
+            "enable-rcon=true\n"
+            "rcon.password=admin\n"
+            "rcon.port=25575\n"
+            "online-mode=true\n"
+        )
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/server.properties", server_props)
+        
+    return "Installation successful."

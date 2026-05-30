@@ -17,6 +17,7 @@ import api.db
 import api.auth
 import api.infrared
 import api.post.server.create
+import api.get.forge
 import api.post.server.run
 import api.post.server.stop
 import api.post.server.hostname
@@ -372,6 +373,37 @@ async def create_server(data: CreateServerRequest, current_user: str = Depends(g
     await sio.emit("servers_updated", {})
     
     return {"message": f"Creation of '{name}' started in background."}
+
+@fastapi_app.get("/api/forge/versions")
+async def get_forge_versions_endpoint(mc_version: str, current_user: str = Depends(get_current_user)):
+    mc_version = mc_version.strip()
+    if not mc_version:
+        raise HTTPException(status_code=400, detail="mc_version is required")
+    try:
+        data = api.get.forge.get_forge_versions(mc_version)
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Forge versions: {str(e)}")
+
+@fastapi_app.post("/api/server/install")
+async def install_server(data: ServerNameRequest, current_user: str = Depends(get_current_user)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+        
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    threading.Thread(
+        target=api.post.server.create.install_forge,
+        args=(name,),
+        daemon=True
+    ).start()
+    
+    await sio.emit("servers_updated", {})
+    return {"message": f"Installation of Forge on '{name}' started in background."}
 
 @fastapi_app.post("/api/server/agree-eula")
 async def agree_eula(data: ServerNameRequest, current_user: str = Depends(get_current_user)):

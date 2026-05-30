@@ -131,8 +131,40 @@ def run_server(server_name):
     java_heap = int(memory_mb * 0.8)
     if java_heap < 512:
         java_heap = 512
-        
-    cmd = f"java -Xmx{java_heap}M -Xms{java_heap}M -jar {jar_filename} nogui --port {port}"
+
+    if info.get("type", "").lower() == "forge":
+        run_sh_path = os.path.join(server_local_path, "run.sh")
+        if os.path.exists(run_sh_path):
+            # For Forge 1.17+, configure memory limit inside user_jvm_args.txt
+            jvm_args_path = os.path.join(server_local_path, "user_jvm_args.txt")
+            jvm_args_content = (
+                "# Xmx and Xms set by MC Server Manager\n"
+                f"-Xmx{java_heap}M\n"
+                f"-Xms{java_heap}M\n"
+            )
+            try:
+                with open(jvm_args_path, "w") as f:
+                    f.write(jvm_args_content)
+                write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/user_jvm_args.txt", jvm_args_content)
+            except Exception as e:
+                print(f"[Docker] Warning: failed to write user_jvm_args.txt: {e}")
+                
+            cmd = f"bash run.sh nogui --port {port}"
+        else:
+            # For Forge 1.16.5 and below, find the forge-*.jar
+            forge_jar = None
+            try:
+                for f in os.listdir(server_local_path):
+                    if f.endswith(".jar") and "forge" in f.lower() and "installer" not in f.lower():
+                        forge_jar = f
+                        break
+            except Exception:
+                pass
+            if not forge_jar:
+                forge_jar = jar_filename
+            cmd = f"java -Xmx{java_heap}M -Xms{java_heap}M -jar {forge_jar} nogui --port {port}"
+    else:
+        cmd = f"java -Xmx{java_heap}M -Xms{java_heap}M -jar {jar_filename} nogui --port {port}"
 
     try:
         print(f"[Docker] Starting container '{container_name}' on internal port {port}...")
@@ -193,11 +225,20 @@ def get_server_status(server_name):
 
     container_name = info.get("container_name") or f"mc-{server_name}"
     
-    if info.get("jar_path") in ("BUILDING...", "DOWNLOADING..."):
+    if info.get("jar_path") in ("BUILDING...", "DOWNLOADING...", "INSTALLING..."):
         return {
             "name": server_name,
             "container": container_name,
             "status": "CREATING",
+            "port": info.get("port"),
+            "hostname": info.get("hostname"),
+        }
+
+    if info.get("type", "").lower() == "forge" and info.get("jar_path", "").endswith("-installer.jar"):
+        return {
+            "name": server_name,
+            "container": container_name,
+            "status": "INSTALL_REQUIRED",
             "port": info.get("port"),
             "hostname": info.get("hostname"),
         }

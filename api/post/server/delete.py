@@ -26,7 +26,7 @@ def delete_server(server_name, remove_data=False):
 
     # Stop and remove Docker containers (server + any stale build/download container)
     client = docker.from_env()
-    for name in [container_name, f"mc-build-{server_name}", f"mc-download-{server_name}"]:
+    for name in [container_name, f"mc-build-{server_name}", f"mc-download-{server_name}", f"mc-install-{server_name}"]:
         try:
             ctr = client.containers.get(name)
             if ctr.status == "running":

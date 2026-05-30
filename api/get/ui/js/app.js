@@ -261,7 +261,16 @@ function renderServers() {
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                Cancel
                            </button>`
-                        : !srv.eula_agreed
+                        : status === 'install_required'
+                            ? `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="installServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                   Install
+                               </button>
+                               <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                   Delete
+                               </button>`
+                            : !srv.eula_agreed
                             ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="agreeToEula('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                    Agree to EULA
@@ -348,18 +357,32 @@ function hideCreateModal(e) {
     if (e && e.target !== e.currentTarget) return;
     document.getElementById('modal-overlay').classList.remove('is-visible');
     document.getElementById('create-server-form').reset();
+    document.getElementById('forge-version-group').style.display = 'none';
+    document.getElementById('version-label').textContent = 'Version';
+    document.getElementById('server-version').placeholder = 'e.g. 1.21.1';
 }
 
 async function createServer(e) {
     e.preventDefault();
     const name = document.getElementById('server-name').value.trim();
     const type = document.getElementById('server-type').value;
-    const version = document.getElementById('server-version').value.trim();
+    const versionInput = document.getElementById('server-version').value.trim();
     const memory_mb = parseInt(document.getElementById('server-memory').value) || 1024;
 
-    if (!name || !version) {
+    if (!name || !versionInput) {
         showToast('Please fill in all fields', 'error');
         return;
+    }
+
+    let version = versionInput;
+    if (type === 'forge') {
+        const forgeSelect = document.getElementById('forge-version-select');
+        const forgeVersion = forgeSelect.value;
+        if (!forgeVersion) {
+            showToast('Please select a Forge version', 'error');
+            return;
+        }
+        version = `${versionInput}-${forgeVersion}`;
     }
 
     if (memory_mb < 512) {
@@ -744,6 +767,103 @@ document.addEventListener('keydown', (e) => {
         showCreateModal();
     }
 });
+
+// --- Forge Version Scraper ---
+let forgeDebounceTimeout = null;
+
+function handleServerTypeChange() {
+    const type = document.getElementById('server-type').value;
+    const versionLabel = document.getElementById('version-label');
+    const versionInput = document.getElementById('server-version');
+    const forgeGroup = document.getElementById('forge-version-group');
+    
+    if (type === 'forge') {
+        versionLabel.textContent = 'Minecraft Version';
+        versionInput.placeholder = 'e.g. 1.20.1';
+        forgeGroup.style.display = 'block';
+        handleMinecraftVersionInput();
+    } else {
+        versionLabel.textContent = 'Version';
+        versionInput.placeholder = 'e.g. 1.21.1';
+        forgeGroup.style.display = 'none';
+    }
+}
+
+function handleMinecraftVersionInput() {
+    const type = document.getElementById('server-type').value;
+    if (type !== 'forge') return;
+    
+    const mcVersion = document.getElementById('server-version').value.trim();
+    const select = document.getElementById('forge-version-select');
+    const hint = document.getElementById('forge-version-hint');
+    
+    select.innerHTML = '';
+    
+    if (!mcVersion) {
+        select.innerHTML = '<option value="">Enter a Minecraft version first</option>';
+        return;
+    }
+    
+    clearTimeout(forgeDebounceTimeout);
+    forgeDebounceTimeout = setTimeout(async () => {
+        hint.textContent = 'Fetching Forge versions...';
+        select.innerHTML = '<option value="">Loading versions...</option>';
+        try {
+            const data = await apiFetch(`/api/forge/versions?mc_version=${encodeURIComponent(mcVersion)}`);
+            select.innerHTML = '';
+            
+            if (!data.versions || data.versions.length === 0) {
+                select.innerHTML = '<option value="">No Forge versions found</option>';
+                hint.textContent = 'Could not find any Forge versions for this Minecraft version.';
+                return;
+            }
+            
+            data.versions.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.version;
+                
+                let label = v.version;
+                if (v.is_recommended) {
+                    label += ' (Recommended)';
+                } else if (v.is_latest) {
+                    label += ' (Latest)';
+                }
+                opt.textContent = label;
+                select.appendChild(opt);
+            });
+            
+            let defaultVersion = null;
+            if (data.recommended) {
+                defaultVersion = data.recommended.version;
+            } else if (data.latest) {
+                defaultVersion = data.latest.version;
+            } else if (data.versions.length > 0) {
+                defaultVersion = data.versions[0].version;
+            }
+            
+            if (defaultVersion) {
+                select.value = defaultVersion;
+            }
+            
+            hint.textContent = `Scraped successfully from official Forge files. Recommended/Latest selected by default.`;
+        } catch (err) {
+            select.innerHTML = '<option value="">Failed to load versions</option>';
+            hint.textContent = `Error: ${err.message}`;
+        }
+    }, 500);
+}
+
+async function installServer(name) {
+    try {
+        showToast(`Starting installation of Forge on ${name}...`, 'info');
+        const data = await apiFetch('/api/server/install', 'POST', { name });
+        showToast(data.message || `Installation started`, 'success');
+        showCreationLogs(name);
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to start installation: ${err.message}`, 'error');
+    }
+}
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
