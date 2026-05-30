@@ -19,11 +19,16 @@ socket.on('servers_updated', async () => {
     }
 });
 
+const CONSOLE_PLACEHOLDERS = [
+    'No console logs found yet. Please start the server...',
+];
+
 socket.on('console_init', (data) => {
     if (activeConsoleServer && data.name === activeConsoleServer) {
         const contentArea = document.getElementById('console-logs-content');
         const container = document.querySelector('.console-logs-container');
         contentArea.textContent = data.logs;
+        contentArea.dataset.placeholder = CONSOLE_PLACEHOLDERS.includes(data.logs) ? '1' : '';
         if (container) {
             container.scrollTop = container.scrollHeight;
         }
@@ -34,6 +39,10 @@ socket.on('console_append', (data) => {
     if (activeConsoleServer && data.name === activeConsoleServer) {
         const contentArea = document.getElementById('console-logs-content');
         const container = document.querySelector('.console-logs-container');
+        if (contentArea.dataset.placeholder === '1') {
+            contentArea.textContent = '';
+            contentArea.dataset.placeholder = '';
+        }
         if (container) {
             const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
             contentArea.textContent += data.line;
