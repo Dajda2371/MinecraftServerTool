@@ -483,7 +483,7 @@ async def run_server(data: ServerNameRequest, current_user: str = Depends(get_cu
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    result = api.post.server.run.run_server(name)
+    result = await asyncio.to_thread(api.post.server.run.run_server, name)
     await sio.emit("servers_updated", {})
     return {"message": result}
 
@@ -496,7 +496,7 @@ async def stop_server(data: ServerNameRequest, current_user: str = Depends(get_c
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    result = api.post.server.stop.stop_server(name) 
+    result = await asyncio.to_thread(api.post.server.stop.stop_server, name) 
     await sio.emit("servers_updated", {})
     return {"message": result}
 
@@ -509,7 +509,7 @@ async def delete_server(data: DeleteServerRequest, current_user: str = Depends(g
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
 
-    result = api.post.server.delete.delete_server(name, remove_data=data.remove_data)
+    result = await asyncio.to_thread(api.post.server.delete.delete_server, name, data.remove_data)
     # Clean up stored console commands for this server
     try:
         api.db.delete_console_commands(name)

@@ -8,3 +8,4 @@ uvicorn
 python-socketio
 beautifulsoup4
 selenium
+python-multipart
