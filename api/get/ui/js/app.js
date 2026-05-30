@@ -698,32 +698,15 @@ async function sendConsoleCommand(e) {
     // Clear input
     inputEl.value = '';
     
-    // Append the command to console for immediate terminal response
-    const contentArea = document.getElementById('console-logs-content');
-    const container = document.querySelector('.console-logs-container');
-    if (container) {
-        const isScrolledToBottom = container.scrollHeight - container.clientHeight <= container.scrollTop + 60;
-        
-        contentArea.textContent += `\n> ${command}\n`;
-        
-        if (isScrolledToBottom) {
+    try {
+        await apiFetch('/api/server/command', 'POST', { name: activeConsoleServer, command });
+    } catch (err) {
+        const contentArea = document.getElementById('console-logs-content');
+        contentArea.textContent += `[Error executing command: ${err.message}]\n`;
+        const container = document.querySelector('.console-logs-container');
+        if (container) {
             container.scrollTop = container.scrollHeight;
         }
-    } else {
-        contentArea.textContent += `\n> ${command}\n`;
-    }
-    
-    try {
-        const responseData = await apiFetch('/api/server/command', 'POST', { name: activeConsoleServer, command });
-        if (responseData.response) {
-            contentArea.textContent += `${responseData.response}\n`;
-        }
-    } catch (err) {
-        contentArea.textContent += `[Error executing command: ${err.message}]\n`;
-    }
-    
-    if (container) {
-        container.scrollTop = container.scrollHeight;
     }
 }
 

@@ -476,6 +476,16 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     container_name = server_info.get("container_name") or f"mc-{name}"
     
     try:
+        # 1. Write the command to latest.log (with > prefix and no trailing newline duplication)
+        log_path = f"data/servers/{name}/logs/latest.log"
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"> {command}\n")
+        except Exception as log_err:
+            print(f"[Console Log Write Error] {log_err}")
+
+        # 2. Send the command to container stdin
         import docker
         client = docker.from_env()
         container = client.containers.get(container_name)
@@ -495,9 +505,6 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
             sock.write(payload)
             
         sock.close()
-        
-        # The command's response is printed directly to container stdout,
-        # which automatically gets broadcasted to the UI via log_stream_worker!
         return {"response": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute command on stdin: {str(e)}")
@@ -588,21 +595,66 @@ async def proxy_reload(admin_user: str = Depends(get_admin_user)):
 # Track active consoles: server_name -> {"sids": set()}
 active_consoles = {}
 
-def log_stream_worker(container_name, server_name, loop_obj):
-    import docker
-    client = docker.from_env()
+def read_latest_log_tail(server_name, max_lines=400):
+    log_path = f"data/servers/{server_name}/logs/latest.log"
+    if not os.path.exists(log_path):
+        return "No console logs found yet. Please start the server..."
+    
     try:
-        container = client.containers.get(container_name)
-        for line in container.logs(stream=True, tail=0, stdout=True, stderr=True):
-            if server_name not in active_consoles:
-                break
-            decoded_line = line.decode("utf-8", errors="ignore")
-            asyncio.run_coroutine_threadsafe(
-                sio.emit("console_append", {"name": server_name, "line": decoded_line}, room=f"console:{server_name}"),
-                loop_obj
-            )
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            from collections import deque
+            lines = deque(f, maxlen=max_lines)
+            return "".join(lines)
     except Exception as e:
-        print(f"[Console Stream Worker Error] {e}")
+        return f"Error reading log file: {e}"
+
+def latest_log_stream_worker(server_name, loop_obj):
+    import os
+    import time
+    log_path = f"data/servers/{server_name}/logs/latest.log"
+    print(f"[Console Stream] Starting stream for {server_name} from {log_path}")
+    
+    current_file = None
+    current_inode = None
+    
+    while server_name in active_consoles:
+        try:
+            if current_file is None:
+                if os.path.exists(log_path):
+                    current_file = open(log_path, "r", encoding="utf-8", errors="ignore")
+                    current_file.seek(0, 2)  # Seek to the end
+                    current_inode = os.fstat(current_file.fileno()).st_ino
+                else:
+                    time.sleep(1)
+                    continue
+
+            line = current_file.readline()
+            if line:
+                asyncio.run_coroutine_threadsafe(
+                    sio.emit("console_append", {"name": server_name, "line": line}, room=f"console:{server_name}"),
+                    loop_obj
+                )
+            else:
+                try:
+                    if os.path.exists(log_path):
+                        new_inode = os.stat(log_path).st_ino
+                        if new_inode != current_inode:
+                            print(f"[Console Stream] Log rotation detected for {server_name}")
+                            current_file.close()
+                            current_file = None
+                            current_inode = None
+                            continue
+                except FileNotFoundError:
+                    pass
+                time.sleep(0.1)
+        except Exception as e:
+            print(f"[Console Stream Error] {e}")
+            if current_file:
+                current_file.close()
+            time.sleep(1)
+            
+    if current_file:
+        current_file.close()
 
 @sio.event
 async def connect(sid, environ):
@@ -629,21 +681,8 @@ async def handle_join_console(sid, data):
     await sio.enter_room(sid, room)
     print(f"[WS Console] Client {sid} joined console room for: {server_name}")
     
-    server_info = api.db.get_server_info(server_name)
-    if not server_info:
-        return
-        
-    container_name = server_info.get("container_name") or f"mc-{server_name}"
-    
-    # 1. Fetch initial logs
-    import docker as docker_mod
-    client = docker_mod.from_env()
-    try:
-        container = client.containers.get(container_name)
-        initial_logs = container.logs(tail=300, stdout=True, stderr=True).decode("utf-8", errors="ignore")
-    except Exception as e:
-        initial_logs = f"Error fetching console logs: {str(e)}"
-        
+    # 1. Fetch initial logs from latest.log file only!
+    initial_logs = read_latest_log_tail(server_name)
     await sio.emit("console_init", {"name": server_name, "logs": initial_logs}, room=sid)
     
     # 2. Check if a worker is already running for this server
@@ -651,8 +690,8 @@ async def handle_join_console(sid, data):
         active_consoles[server_name] = {"sids": {sid}}
         import threading
         t = threading.Thread(
-            target=log_stream_worker,
-            args=(container_name, server_name, asyncio.get_running_loop()),
+            target=latest_log_stream_worker,
+            args=(server_name, asyncio.get_running_loop()),
             daemon=True
         )
         t.start()
