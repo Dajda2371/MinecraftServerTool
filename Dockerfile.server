@@ -22,7 +22,10 @@ RUN apt-get update \
 
 # Create the non-root minecraft user/group at UID/GID 1000. The
 # entrypoint execs as this UID via gosu.
-RUN groupadd -g 1000 minecraft && \
+RUN touch /etc/passwd /etc/group && \
+    if getent passwd 1000; then userdel -r $(getent passwd 1000 | cut -d: -f1); fi && \
+    if getent group 1000; then groupdel $(getent group 1000 | cut -d: -f1); fi && \
+    groupadd -g 1000 minecraft && \
     useradd -m -u 1000 -g 1000 minecraft
 
 # Working directory is /data; volume is mounted on top of this path at

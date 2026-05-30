@@ -108,6 +108,20 @@ addresses:
             f.write(proxy_content)
         written += 1
 
+    if written == 0:
+        placeholder_content = """# Infrared placeholder proxy to prevent container crash when no servers exist yet.
+domains:
+  - "placeholder.invalid"
+
+addresses:
+  - "localhost:25565"
+"""
+        placeholder_path = os.path.join(PROXIES_DIR, "placeholder.yml")
+        with open(placeholder_path, "w") as f:
+            f.write(placeholder_content)
+        current_names.add("placeholder.yml")
+        print("[Infrared] Written placeholder proxy file to prevent startup crash.")
+
     # Remove stale proxy files for deleted servers
     if os.path.isdir(PROXIES_DIR):
         for fname in os.listdir(PROXIES_DIR):
