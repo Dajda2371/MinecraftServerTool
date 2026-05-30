@@ -490,22 +490,49 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
 
         # 2. Emit the same formatted line used by read_latest_log_tail so the
         #    live console and the reopened-console view are byte-for-byte identical.
-        #    Format: [HH:MM:SS] [Console/CMD]: > command
+        #    Format: [HH:MM:SS] [Console/CMD]: command
         ts = datetime.now().strftime("%H:%M:%S")
         await sio.emit(
             "console_append",
-            {"name": name, "line": f"[{ts}] [Console/CMD]: > {command}\n"},
+            {"name": name, "line": f"[{ts}] [Console/CMD]: {command}\n"},
             room=f"console:{name}"
         )
 
-        # 3. Send the command to container stdin
+        # 3a. `stop` typed in the console: route through the same Docker stop
+        #     path the Stop button uses. Sending "stop" to stdin would let
+        #     Minecraft exit cleanly, but the container's unless-stopped
+        #     restart policy would then bring it right back up. container.stop
+        #     marks the exit as user-initiated, which suppresses the restart.
+        if command.strip().lower() == "stop":
+            def _stop_in_bg(srv_name):
+                try:
+                    api.post.server.stop.stop_server(srv_name)
+                except Exception as stop_err:
+                    print(f"[Console Stop] Error stopping '{srv_name}': {stop_err}")
+                if loop:
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            sio.emit("servers_updated", {}),
+                            loop,
+                        )
+                    except Exception as emit_err:
+                        print(f"[Console Stop] Error emitting update: {emit_err}")
+
+            threading.Thread(
+                target=_stop_in_bg,
+                args=(name,),
+                daemon=True,
+            ).start()
+            return {"response": ""}
+
+        # 3b. Any other command: send to container stdin.
         import docker
         client = docker.from_env()
         container = client.containers.get(container_name)
-        
+
         sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
         payload = (command + "\n").encode("utf-8")
-        
+
         if hasattr(sock, '_sock'):
             sock._sock.sendall(payload)
         elif hasattr(sock, 'send'):
@@ -514,27 +541,6 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
             sock.write(payload)
 
         sock.close()
-
-        # If the user typed `stop`, the server will shut itself down.
-        # Wait for the container to exit, then merge DB commands into
-        # latest.log so they survive the next-startup log rotation.
-        if command.strip().lower() == "stop":
-            def _wait_and_inject(container_obj, srv_name):
-                try:
-                    container_obj.wait()
-                except Exception as wait_err:
-                    print(f"[Console Stop] Wait error for '{srv_name}': {wait_err}")
-                try:
-                    api.post.server.stop.inject_commands_into_log(srv_name)
-                except Exception as inj_err:
-                    print(f"[Console Stop] Inject error for '{srv_name}': {inj_err}")
-
-            threading.Thread(
-                target=_wait_and_inject,
-                args=(container, name),
-                daemon=True,
-            ).start()
-
         return {"response": ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to execute command on stdin: {str(e)}")
@@ -676,7 +682,7 @@ def read_latest_log_tail(server_name, max_lines=400):
             ts = local_dt.strftime("%H:%M:%S")
             if first_log_ts is not None and ts < first_log_ts:
                 continue
-            line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
+            line = f"[{ts}] [Console/CMD]: {c['command']}\n"
             if line in existing_lines:
                 continue
             entries.append((ts, 0, line))

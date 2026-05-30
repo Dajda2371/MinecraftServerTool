@@ -68,7 +68,7 @@ def inject_commands_into_log(server_name):
         ts = local.strftime("%H:%M:%S")
         if first_log_ts is not None and ts < first_log_ts:
             continue
-        line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
+        line = f"[{ts}] [Console/CMD]: {c['command']}\n"
         if line in existing_lines:
             continue
         entries.append((ts, 0, line))
