@@ -704,10 +704,13 @@ def latest_log_stream_worker(server_name, loop_obj):
     import time
     log_path = f"data/servers/{server_name}/logs/latest.log"
     print(f"[Console Stream] Starting stream for {server_name} from {log_path}")
-    
+
     current_file = None
     current_inode = None
-    
+    # Holds bytes read before a terminating newline arrived. Emitting a partial
+    # line would let a live CMD emit interleave inside a server log line.
+    pending = ""
+
     while server_name in active_consoles:
         try:
             if current_file is None:
@@ -719,12 +722,15 @@ def latest_log_stream_worker(server_name, loop_obj):
                     time.sleep(1)
                     continue
 
-            line = current_file.readline()
-            if line:
-                asyncio.run_coroutine_threadsafe(
-                    sio.emit("console_append", {"name": server_name, "line": line}, room=f"console:{server_name}"),
-                    loop_obj
-                )
+            chunk = current_file.readline()
+            if chunk:
+                pending += chunk
+                if pending.endswith("\n"):
+                    asyncio.run_coroutine_threadsafe(
+                        sio.emit("console_append", {"name": server_name, "line": pending}, room=f"console:{server_name}"),
+                        loop_obj
+                    )
+                    pending = ""
             else:
                 try:
                     if os.path.exists(log_path):
@@ -734,6 +740,7 @@ def latest_log_stream_worker(server_name, loop_obj):
                             current_file.close()
                             current_file = None
                             current_inode = None
+                            pending = ""  # discard any half-line from the rotated file
                             continue
                 except FileNotFoundError:
                     pass
@@ -743,7 +750,7 @@ def latest_log_stream_worker(server_name, loop_obj):
             if current_file:
                 current_file.close()
             time.sleep(1)
-            
+
     if current_file:
         current_file.close()
 
