@@ -724,7 +724,7 @@ def read_latest_log_tail(server_name, max_lines=400):
     entries = []
     existing_lines = set()
     first_log_ts = None
-    ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
+    ts_re = re.compile(r'^\[(?:[^\]]*\s)?(\d{2}:\d{2}:\d{2})(?:\.\d+)?\]')
     if os.path.exists(log_path):
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
