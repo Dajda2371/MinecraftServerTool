@@ -482,16 +482,19 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     
     try:
         # 1. Persist the command to PostgreSQL so it survives console re-opens
+        from datetime import datetime, timezone
         try:
             api.db.log_console_command(name, current_user, command)
         except Exception as db_err:
             print(f"[Console DB Write Error] {db_err}")
 
-        # 2. Emit " > command" to the live console room immediately
-        #    (Minecraft's log4j keeps latest.log open so we cannot append there)
+        # 2. Emit the same formatted line used by read_latest_log_tail so the
+        #    live console and the reopened-console view are byte-for-byte identical.
+        #    Format: [HH:MM:SS] [Console/CMD]: > command
+        ts = datetime.now().strftime("%H:%M:%S")
         await sio.emit(
             "console_append",
-            {"name": name, "line": f"> {command}\n"},
+            {"name": name, "line": f"[{ts}] [Console/CMD]: > {command}\n"},
             room=f"console:{name}"
         )
 
@@ -605,57 +608,49 @@ def read_latest_log_tail(server_name, max_lines=400):
     """
     Build the initial console snapshot shown when a client opens the console.
 
-    Strategy: merge the last `max_lines` lines from `latest.log` (the
-    Minecraft server log) with the command history stored in PostgreSQL,
-    sorted chronologically.
+    Merges the tail of ``latest.log`` with command history from PostgreSQL,
+    sorted chronologically.  Both sources use ``HH:MM:SS`` timestamps.
 
-    Both sources carry wall-clock timestamps so we can interleave them:
-    - latest.log lines look like  ``[HH:MM:SS] [Thread/Level]: …``
-    - DB commands are stored with a full TIMESTAMPTZ; we format them as
-      ``[HH:MM:SS] [Console/CMD]: > command`` to match the log style.
+    Within the same second, **commands come first** (priority 0) so that
+    ``[20:15:52] [Console/CMD]: > gamerule keepInventory`` appears before
+    ``[20:15:52] [Server thread/INFO]: Incorrect argument …``.
     """
-    from datetime import timezone
     import re
+    from collections import deque
 
     log_path = f"data/servers/{server_name}/logs/latest.log"
 
-    # --- 1. Read the tail of latest.log ---
-    log_lines = []  # list of (time_str, raw_line)
+    # --- 1. Read the tail of latest.log  (priority=1 — appears after commands) ---
+    # Each entry: (time_str, priority, raw_line)
+    entries = []
     if os.path.exists(log_path):
         try:
-            from collections import deque
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                 tail = deque(f, maxlen=max_lines)
             ts_re = re.compile(r'^\[(\d{2}:\d{2}:\d{2})\]')
             for raw in tail:
                 m = ts_re.match(raw)
-                log_lines.append((m.group(1) if m else "00:00:00", raw))
+                entries.append((m.group(1) if m else "00:00:00", 1, raw))
         except Exception as e:
             return f"Error reading log file: {e}"
-    
-    if not log_lines:
-        # No log yet — still show any stored commands so the user sees history
-        pass
 
-    # --- 2. Fetch DB commands and format them like log lines ---
-    cmd_lines = []  # list of (time_str, formatted_line)
+    # --- 2. Fetch DB commands  (priority=0 — appears before server response) ---
     try:
         cmds = api.db.get_console_commands(server_name, limit=max_lines)
         for c in cmds:
-            # sent_at is a tz-aware datetime from psycopg2
             local_dt = c["sent_at"].astimezone()
             ts = local_dt.strftime("%H:%M:%S")
             line = f"[{ts}] [Console/CMD]: > {c['command']}\n"
-            cmd_lines.append((ts, line))
+            entries.append((ts, 0, line))
     except Exception as e:
         print(f"[Console] Warning: could not load DB commands: {e}")
 
-    if not log_lines and not cmd_lines:
+    if not entries:
         return "No console logs found yet. Please start the server..."
 
-    # --- 3. Merge by timestamp string (HH:MM:SS), stable sort keeps file order ---
-    merged = sorted(log_lines + cmd_lines, key=lambda x: x[0])
-    return "".join(line for _, line in merged)
+    # --- 3. Sort by (time_str, priority) — commands (0) sort before log (1) ---
+    entries.sort(key=lambda x: (x[0], x[1]))
+    return "".join(line for _, _, line in entries)
 
 def latest_log_stream_worker(server_name, loop_obj):
     import os
