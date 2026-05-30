@@ -188,6 +188,13 @@ def update_server_info(name, owner, type, version, jar_path, port=None, hostname
             WHERE name = %s
         ''', (owner, type, version, jar_path, new_port, new_hostname, new_container, new_memory, name))
     else:
+        # If it doesn't exist, only insert if it's in a starting/creating state.
+        # If it's a finished jar_path, it means the server was cancelled/deleted during creation.
+        if jar_path not in ("BUILDING...", "DOWNLOADING..."):
+            print(f"[DB] Server '{name}' was deleted/cancelled during creation. Skipping insert.")
+            conn.close()
+            return
+
         if port is None:
             port = 25565
 

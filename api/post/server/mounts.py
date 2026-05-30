@@ -42,3 +42,30 @@ def server_data_mount(server_name, target="/data", read_only=False):
         subpath=f"servers/{server_name}",
         read_only=read_only,
     )
+
+
+def ensure_volume_directory(volume_name, subpath):
+    """
+    Ensure that a subdirectory exists inside a Docker volume.
+    Spawns a quick ephemeral container that mounts the root of the volume and runs mkdir -p.
+    """
+    import docker
+    client = docker.from_env()
+    try:
+        # eclipse-temurin:21-jdk is already pulled/built on the host for servers
+        client.containers.run(
+            image="eclipse-temurin:21-jdk",
+            command=f"mkdir -p /vol/{subpath}",
+            mounts=[
+                docker.types.Mount(
+                    target="/vol",
+                    source=volume_name,
+                    type="volume"
+                )
+            ],
+            remove=True
+        )
+        print(f"[Docker] Ensured volume directory '{volume_name}:{subpath}' exists.")
+    except Exception as e:
+        print(f"[Docker] Warning: failed to ensure volume directory '{volume_name}:{subpath}': {e}")
+

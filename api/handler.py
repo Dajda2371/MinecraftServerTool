@@ -93,6 +93,40 @@ class Handler(SimpleHTTPRequestHandler):
                     server["status"] = "UNKNOWN"
             return self._send_json(200, {"servers": servers})
 
+        elif self.path.startswith('/api/server/') and self.path.endswith('/creation-logs'):
+            user = self._get_current_user()
+            if not user:
+                return self._send_json(401, {"error": "Not logged in"})
+                
+            parts = self.path.split('/')
+            name = parts[-2]
+            server = api.db.get_server_info(name)
+            
+            if not server:
+                return self._send_json(404, {"error": "Server not found"})
+                
+            if user != 'admin' and server['owner'] != user:
+                return self._send_json(403, {"error": "Access denied"})
+                
+            import os
+            log_content = ""
+            log_paths = [
+                f"data/servers/{name}/creation.log",
+                f"data/servers/{name}/buildtools.log"
+            ]
+            for p in log_paths:
+                if os.path.exists(p):
+                    try:
+                        with open(p, "r") as f:
+                            log_content = f.read()
+                        break
+                    except Exception as e:
+                        log_content = f"Error reading log file: {e}"
+            else:
+                log_content = "No creation logs found yet. Please wait..."
+                
+            return self._send_json(200, {"logs": log_content})
+
         elif self.path.startswith('/api/server/'):
             user = self._get_current_user()
             if not user:

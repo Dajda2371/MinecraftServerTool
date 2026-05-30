@@ -7,6 +7,7 @@ let servers = [];
 let deleteTargetName = null;
 let refreshInterval = null;
 let currentUser = null;
+let logsPollInterval = null;
 
 // --- API Helpers ---
 async function apiFetch(endpoint, method = 'GET', data = null) {
@@ -184,20 +185,32 @@ function renderServers() {
                     </div>
                 </div>
                 <div class="card-actions">
-                    ${isRunning
-                        ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
-                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                               Stop
+                    ${status === 'creating'
+                        ? `<button class="btn btn-sm btn-ghost" onclick="showCreationLogs('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                               Logs
+                           </button>
+                           <button class="btn btn-sm btn-danger" onclick="cancelServerCreation('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                               Cancel
                            </button>`
-                        : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
-                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                               Start
-                           </button>`
+                        : isRunning
+                            ? `<button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                                   Stop
+                               </button>`
+                            : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                   Start
+                               </button>`
                     }
-                    <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        Delete
-                    </button>
+                    ${status !== 'creating'
+                        ? `<button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                               Delete
+                           </button>`
+                        : ''
+                    }
                 </div>
             </div>
         `;
@@ -534,6 +547,66 @@ async function resetUserPass(username) {
     }
 }
 
+// --- Creation Logs & Cancel Creation ---
+function showCreationLogs(name) {
+    document.getElementById('logs-server-name').textContent = name;
+    const contentArea = document.getElementById('creation-logs-content');
+    contentArea.textContent = 'Loading logs...';
+    
+    document.getElementById('logs-modal-overlay').classList.add('is-visible');
+    
+    // Poll immediately, then every 1.5 seconds
+    const pollLogs = async () => {
+        try {
+            const data = await apiFetch(`/api/server/${name}/creation-logs`);
+            
+            // Check if user has closed the modal in the meantime
+            if (!document.getElementById('logs-modal-overlay').classList.contains('is-visible')) {
+                return;
+            }
+            
+            // Update logs
+            const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 30;
+            contentArea.textContent = data.logs;
+            
+            // Auto scroll to bottom if it was already at the bottom (or on first load)
+            if (isScrolledToBottom || contentArea.textContent === 'Loading logs...') {
+                contentArea.scrollTop = contentArea.scrollHeight;
+            }
+        } catch (err) {
+            console.error('Error polling creation logs:', err);
+            contentArea.textContent = `Error loading logs: ${err.message}`;
+        }
+    };
+    
+    pollLogs();
+    logsPollInterval = setInterval(pollLogs, 1500);
+}
+
+function hideLogsModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('logs-modal-overlay').classList.remove('is-visible');
+    if (logsPollInterval) {
+        clearInterval(logsPollInterval);
+        logsPollInterval = null;
+    }
+}
+
+async function cancelServerCreation(name) {
+    if (!confirm(`Are you sure you want to cancel the creation of server '${name}'? This will stop the setup and completely delete the server.`)) {
+        return;
+    }
+    
+    showToast(`Cancelling creation of ${name}...`, 'info');
+    try {
+        const data = await apiFetch('/api/server/delete', 'POST', { name, remove_data: true });
+        showToast(data.message || `Creation cancelled.`, 'success');
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to cancel: ${err.message}`, 'error');
+    }
+}
+
 // --- Keyboard Shortcuts ---
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -542,6 +615,7 @@ document.addEventListener('keydown', (e) => {
         hideHostnameModal();
         hideMemoryModal();
         hideUsersModal();
+        hideLogsModal();
     }
     // Ctrl+N to create server
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {

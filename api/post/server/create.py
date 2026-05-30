@@ -12,6 +12,7 @@ from api.post.server.mounts import (
     SERVER_DATA_VOLUME,
     server_data_mount,
     volume_subpath_mount,
+    ensure_volume_directory,
 )
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
@@ -52,6 +53,9 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
     image = f"eclipse-temurin:{DEFAULT_BUILD_JAVA}-jdk"
     jar_filename = f"vanilla-{version}.jar"
 
+    # Ensure volume directory exists before mounting subpath
+    ensure_volume_directory(SERVER_DATA_VOLUME, f"servers/{server_name}")
+
     client = docker.from_env()
 
     # Remove stale download container if exists
@@ -63,11 +67,12 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
 
     print(f"Starting download container ({image}) for vanilla server '{server_name}' version {version}...")
 
+    # Route entire command logs through tee to /data/creation.log so it can be read by UI
     command = (
         f'bash -c "'
-        f"apt-get update -qq && apt-get install -y -qq curl && "
+        f"(apt-get update -qq && apt-get install -y -qq curl && "
         f"curl -fsSL -o /data/{jar_filename} '{jar_url}' && "
-        f'chown -R 1000:1000 /data"'
+        f'chown -R 1000:1000 /data) 2>&1 | tee /data/creation.log"'
     )
 
     container = client.containers.run(
@@ -151,6 +156,11 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     Run BuildTools inside an ephemeral Docker container.
     Returns (success, message, log_content).
     """
+    # Ensure volume subpaths exist before mounting them
+    ensure_volume_directory(SERVER_DATA_VOLUME, f"servers/{server_name}")
+    ensure_volume_directory(SERVER_DATA_VOLUME, ".buildtools-cache/m2")
+    ensure_volume_directory(SERVER_DATA_VOLUME, ".buildtools-cache/repos")
+
     # BuildTools caches live as subpaths of the shared mc-data volume so we
     # don't introduce another top-level volume. mc-tool can seed them via
     # its own /app/data mount.
@@ -351,6 +361,8 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             jar_name = download_vanilla_jar(server_name, server_version)
         except Exception as e:
             print(f"Failed to download vanilla JAR: {e}")
+            import shutil
+            shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
 
         os.system(f'echo "eula=true" > data/servers/{server_name}/eula.txt')
@@ -421,6 +433,8 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             print(f"  Online-mode: true (backend handles auth, Infrared routes only)")
             return f"Server '{server_name}' created successfully."
         else:
+            import shutil
+            shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return message
 
     else:
