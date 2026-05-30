@@ -23,6 +23,13 @@ DEFAULT_BUILD_JAVA = "25"
 
 VANILLA_GIST_URL = "https://gist.githubusercontent.com/cliffano/77a982a7503669c3e1acb0a0cf6127e9/raw/minecraft-server-jar-downloads.md"
 
+# Real-time Socket.IO log callback hook
+log_callback = None
+
+def register_log_callback(cb):
+    global log_callback
+    log_callback = cb
+
 
 def fetch_vanilla_jar_url(version):
     """Fetch the vanilla server JAR download URL for a given Minecraft version from the gist."""
@@ -77,6 +84,12 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
         f'chown -R 1000:1000 /data) 2>&1 | tee /data/creation.log"'
     )
 
+    # Clear / prepare the host creation.log path early for tailing
+    log_path = os.path.join("data", "servers", server_name, "creation.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "w") as f:
+        f.write("")
+
     container = client.containers.run(
         image=image,
         command=command,
@@ -88,8 +101,20 @@ def run_vanilla_download_container(server_name, version, jar_url, memory_mb=512)
         labels=get_compose_labels(f"download-{server_name}"),
     )
 
+    # Follow download log in real time via Socket.IO
+    stop_event = threading.Event()
+    log_thread = threading.Thread(
+        target=follow_log_file,
+        args=(log_path, stop_event, server_name),
+        daemon=True,
+    )
+    log_thread.start()
+
     result = container.wait()
     exit_code = result.get("StatusCode", -1)
+
+    stop_event.set()
+    log_thread.join()
 
     try:
         logs = container.logs().decode("utf-8", errors="replace")
@@ -119,7 +144,7 @@ def download_vanilla_jar(server_name, version, memory_mb=512):
     return jar_name
 
 
-def follow_log_file(path, stop_event):
+def follow_log_file(path, stop_event, server_name=None):
     try:
         with open(path, "r") as f:
             f.seek(0, 2)  # move to end of file
@@ -127,6 +152,11 @@ def follow_log_file(path, stop_event):
                 line = f.readline()
                 if line:
                     print(line, end="")
+                    if log_callback and server_name:
+                        try:
+                            log_callback(server_name, line)
+                        except Exception as e:
+                            print(f"[LogCallback Error] {e}")
                 else:
                     time.sleep(0.25)
     except FileNotFoundError:
@@ -226,7 +256,7 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     stop_event = threading.Event()
     log_thread = threading.Thread(
         target=follow_log_file,
-        args=(log_path, stop_event),
+        args=(log_path, stop_event, server_name),
         daemon=True,
     )
     log_thread.start()

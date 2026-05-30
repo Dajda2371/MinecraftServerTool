@@ -5,9 +5,46 @@
 // --- State ---
 let servers = [];
 let deleteTargetName = null;
-let refreshInterval = null;
 let currentUser = null;
-let logsPollInterval = null;
+let activeLogServer = null;
+
+// --- Socket.IO Real-Time Client ---
+const socket = io();
+
+socket.on('servers_updated', async () => {
+    console.log('Real-time server update received');
+    if (currentUser) {
+        await loadServers();
+    }
+});
+
+socket.on('proxy_routes_updated', async () => {
+    console.log('Real-time proxy status update received');
+    if (currentUser && currentUser.username === 'admin') {
+        await loadProxyStatus();
+    }
+});
+
+socket.on('logs_init', (data) => {
+    if (activeLogServer && data.name === activeLogServer) {
+        const contentArea = document.getElementById('creation-logs-content');
+        contentArea.textContent = data.logs;
+        contentArea.scrollTop = contentArea.scrollHeight;
+    }
+});
+
+socket.on('logs_append', (data) => {
+    if (activeLogServer && data.name === activeLogServer) {
+        const contentArea = document.getElementById('creation-logs-content');
+        const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 30;
+        
+        contentArea.textContent += data.line;
+        
+        if (isScrolledToBottom || contentArea.textContent === data.line) {
+            contentArea.scrollTop = contentArea.scrollHeight;
+        }
+    }
+});
 
 // --- API Helpers ---
 async function apiFetch(endpoint, method = 'GET', data = null) {
@@ -554,46 +591,24 @@ async function resetUserPass(username) {
 
 // --- Creation Logs & Cancel Creation ---
 function showCreationLogs(name) {
+    activeLogServer = name;
     document.getElementById('logs-server-name').textContent = name;
     const contentArea = document.getElementById('creation-logs-content');
     contentArea.textContent = 'Loading logs...';
     
     document.getElementById('logs-modal-overlay').classList.add('is-visible');
     
-    // Poll immediately, then every 1.5 seconds
-    const pollLogs = async () => {
-        try {
-            const data = await apiFetch(`/api/server/${name}/creation-logs`);
-            
-            // Check if user has closed the modal in the meantime
-            if (!document.getElementById('logs-modal-overlay').classList.contains('is-visible')) {
-                return;
-            }
-            
-            // Update logs
-            const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 30;
-            contentArea.textContent = data.logs;
-            
-            // Auto scroll to bottom if it was already at the bottom (or on first load)
-            if (isScrolledToBottom || contentArea.textContent === 'Loading logs...') {
-                contentArea.scrollTop = contentArea.scrollHeight;
-            }
-        } catch (err) {
-            console.error('Error polling creation logs:', err);
-            contentArea.textContent = `Error loading logs: ${err.message}`;
-        }
-    };
-    
-    pollLogs();
-    logsPollInterval = setInterval(pollLogs, 1500);
+    // Join creation logs room via Socket.IO
+    socket.emit('join_creation_logs', { name });
 }
 
 function hideLogsModal(e) {
     if (e && e.target !== e.currentTarget) return;
     document.getElementById('logs-modal-overlay').classList.remove('is-visible');
-    if (logsPollInterval) {
-        clearInterval(logsPollInterval);
-        logsPollInterval = null;
+    
+    if (activeLogServer) {
+        socket.emit('leave_creation_logs', { name: activeLogServer });
+        activeLogServer = null;
     }
 }
 
@@ -647,14 +662,4 @@ document.addEventListener('keydown', (e) => {
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
-
-    // Auto-refresh every 10 seconds
-    refreshInterval = setInterval(() => {
-        if (currentUser) {
-            loadServers();
-            if (currentUser.username === 'admin') {
-                loadProxyStatus();
-            }
-        }
-    }, 10000);
 });
