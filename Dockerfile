@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y \
     procps \
     curl \
     supervisor \
+    chromium \
+    chromium-driver \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---- Docker CLI (to control sibling containers via mounted socket) ----

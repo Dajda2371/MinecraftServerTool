@@ -287,7 +287,14 @@ function renderServers() {
                                    <button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                                        Stop
-                                   </button>`
+                                   </button>
+                                   ${type.toLowerCase() === 'forge'
+                                       ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
+                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                              Upload Mods
+                                          </button>`
+                                       : ''
+                                   }`
                                 : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                        Start
@@ -295,7 +302,14 @@ function renderServers() {
                                    <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                        Delete
-                                   </button>`
+                                   </button>
+                                   ${type.toLowerCase() === 'forge'
+                                       ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
+                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                              Upload Mods
+                                          </button>`
+                                       : ''
+                                   }`
                     }
                 </div>
             </div>
@@ -869,3 +883,276 @@ async function installServer(name) {
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
 });
+
+// --- Upload Mods State & Functions ---
+let modsServerTarget = null;
+let modsSelectedSource = null;
+let modsFileToUpload = null;
+let modsDragDropInitialized = false;
+
+function showModsModal(name) {
+    modsServerTarget = name;
+    document.getElementById('mods-server-name').textContent = name;
+    
+    // Reset steps and states
+    modsSelectedSource = null;
+    modsFileToUpload = null;
+    
+    document.getElementById('mods-step-source').style.display = 'block';
+    document.getElementById('mods-step-upload').style.display = 'none';
+    
+    // Clear any selected file info
+    clearSelectedModFile();
+    
+    // Hide progress bar
+    document.getElementById('mods-progress-container').style.display = 'none';
+    document.getElementById('mods-progress-bar').style.width = '0%';
+    document.getElementById('mods-progress-percent').textContent = '0%';
+    document.getElementById('mods-progress-status').textContent = 'Uploading...';
+    
+    // Show modal
+    document.getElementById('mods-modal-overlay').classList.add('is-visible');
+    
+    // Initialize drag and drop if not already done
+    initModsDragDrop();
+}
+
+function hideModsModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    
+    // If upload is in progress, warn or block closing
+    const progressContainer = document.getElementById('mods-progress-container');
+    if (progressContainer.style.display === 'block' && 
+        !document.getElementById('btn-submit-upload').disabled) {
+        if (!confirm("An upload/download is in progress. Are you sure you want to close this window?")) {
+            return;
+        }
+    }
+    
+    document.getElementById('mods-modal-overlay').classList.remove('is-visible');
+    modsServerTarget = null;
+    modsSelectedSource = null;
+    modsFileToUpload = null;
+}
+
+function selectModsSource(source) {
+    modsSelectedSource = source;
+    
+    const fileInput = document.getElementById('mods-file-input');
+    const subtitle = document.getElementById('mods-upload-subtitle');
+    const text = document.querySelector('.drop-zone-text');
+    const hint = document.getElementById('mods-file-hint');
+    
+    if (source === 'curseforge') {
+        fileInput.setAttribute('accept', '.html');
+        subtitle.textContent = 'Import CurseForge HTML Modlist';
+        text.innerHTML = 'Drag & drop your CurseForge <span class="browse-link">.html modlist</span> here or browse';
+        hint.textContent = 'Accepts CurseForge HTML export files (.html)';
+    } else {
+        fileInput.setAttribute('accept', '.jar');
+        subtitle.textContent = 'Upload Local Mods';
+        text.innerHTML = 'Drag & drop your mod <span class="browse-link">.jar file</span> here or browse';
+        hint.textContent = 'Accepts Minecraft Mod files (.jar)';
+    }
+    
+    document.getElementById('mods-step-source').style.display = 'none';
+    document.getElementById('mods-step-upload').style.display = 'block';
+    
+    // Reset file selection
+    clearSelectedModFile();
+}
+
+function goBackToSourceSelect() {
+    // If progress is visible, don't allow going back easily
+    const progressContainer = document.getElementById('mods-progress-container');
+    if (progressContainer.style.display === 'block') return;
+    
+    modsSelectedSource = null;
+    clearSelectedModFile();
+    
+    document.getElementById('mods-step-upload').style.display = 'none';
+    document.getElementById('mods-step-source').style.display = 'block';
+}
+
+function clearSelectedModFile() {
+    modsFileToUpload = null;
+    document.getElementById('mods-file-input').value = '';
+    document.getElementById('mods-selected-file').style.display = 'none';
+    document.getElementById('mods-drop-zone').style.display = 'flex';
+    
+    const submitBtn = document.getElementById('btn-submit-upload');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Upload & Install';
+}
+
+function handleSelectedModFile(file) {
+    if (!file) return;
+    
+    // Type checking
+    if (modsSelectedSource === 'curseforge' && !file.name.endsWith('.html')) {
+        showToast('Please select a .html CurseForge modlist file.', 'error');
+        clearSelectedModFile();
+        return;
+    }
+    
+    if (modsSelectedSource === 'local' && !file.name.endsWith('.jar')) {
+        showToast('Please select a .jar Minecraft mod file.', 'error');
+        clearSelectedModFile();
+        return;
+    }
+    
+    modsFileToUpload = file;
+    
+    // Show selected file in UI
+    document.getElementById('mods-filename').textContent = file.name;
+    document.getElementById('mods-filesize').textContent = formatBytes(file.size);
+    
+    document.getElementById('mods-drop-zone').style.display = 'none';
+    document.getElementById('mods-selected-file').style.display = 'flex';
+    
+    // Enable submit
+    const submitBtn = document.getElementById('btn-submit-upload');
+    submitBtn.disabled = false;
+    if (modsSelectedSource === 'curseforge') {
+        submitBtn.textContent = 'Import & Download';
+    } else {
+        submitBtn.textContent = 'Upload Mod';
+    }
+}
+
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function initModsDragDrop() {
+    if (modsDragDropInitialized) return;
+    
+    const dropZone = document.getElementById('mods-drop-zone');
+    const fileInput = document.getElementById('mods-file-input');
+    
+    if (!dropZone || !fileInput) return;
+    
+    // Open explorer when clicking drop zone
+    dropZone.addEventListener('click', () => {
+        fileInput.click();
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleSelectedModFile(e.target.files[0]);
+        }
+    });
+    
+    // Drag events
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drop-zone--over');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drop-zone--over');
+        }, false);
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleSelectedModFile(files[0]);
+        }
+    }, false);
+    
+    modsDragDropInitialized = true;
+}
+
+function submitModUpload() {
+    if (!modsServerTarget || !modsSelectedSource || !modsFileToUpload) return;
+    
+    const submitBtn = document.getElementById('btn-submit-upload');
+    const progressContainer = document.getElementById('mods-progress-container');
+    const progressBar = document.getElementById('mods-progress-bar');
+    const progressPercent = document.getElementById('mods-progress-percent');
+    const progressStatus = document.getElementById('mods-progress-status');
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Processing...';
+    
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
+    progressStatus.textContent = 'Uploading file...';
+    
+    const formData = new FormData();
+    formData.append('file', modsFileToUpload);
+    
+    const xhr = new XMLHttpRequest();
+    const endpoint = modsSelectedSource === 'curseforge' 
+        ? `/api/server/${encodeURIComponent(modsServerTarget)}/upload-modlist`
+        : `/api/server/${encodeURIComponent(modsServerTarget)}/upload-mod`;
+        
+    xhr.open('POST', endpoint, true);
+    
+    // Track upload progress
+    xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            if (percent === 100) {
+                if (modsSelectedSource === 'curseforge') {
+                    progressStatus.textContent = 'CurseForge List received! Starting downloader...';
+                } else {
+                    progressStatus.textContent = 'Saving mod...';
+                }
+            }
+        }
+    });
+    
+    xhr.onload = function() {
+        let respData = {};
+        try {
+            respData = JSON.parse(xhr.responseText);
+        } catch (e) {}
+        
+        if (xhr.status >= 200 && xhr.status < 300) {
+            showToast(respData.message || 'File processed successfully!', 'success');
+            
+            if (modsSelectedSource === 'curseforge') {
+                // Close modal and open logs room to watch download!
+                hideModsModal();
+                setTimeout(() => {
+                    showCreationLogs(modsServerTarget);
+                }, 300);
+            } else {
+                // For direct mods uploader, clear selection and let them add more
+                clearSelectedModFile();
+                progressContainer.style.display = 'none';
+            }
+        } else {
+            showToast(respData.detail || respData.error || `Upload failed (Status ${xhr.status})`, 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = modsSelectedSource === 'curseforge' ? 'Import & Download' : 'Upload Mod';
+            progressContainer.style.display = 'none';
+        }
+    };
+    
+    xhr.onerror = function() {
+        showToast('Network error occurred during file upload.', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = modsSelectedSource === 'curseforge' ? 'Import & Download' : 'Upload Mod';
+        progressContainer.style.display = 'none';
+    };
+    
+    xhr.send(formData);
+}

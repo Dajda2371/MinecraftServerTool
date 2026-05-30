@@ -6,7 +6,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 
 import socketio
-from fastapi import FastAPI, Depends, HTTPException, Cookie, Response, Request
+from fastapi import FastAPI, Depends, HTTPException, Cookie, Response, Request, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -73,8 +73,10 @@ def socketio_log_callback(server_name, line):
             loop
         )
 
-# Register the callback hook early with the server creation module
+# Register the callback hook early with the server creation and mods modules
+import api.post.server.mods
 api.post.server.create.register_log_callback(socketio_log_callback)
+api.post.server.mods.register_log_callback(socketio_log_callback)
 
 # --- Lifespan Event Handler ---
 @asynccontextmanager
@@ -404,6 +406,60 @@ async def install_server(data: ServerNameRequest, current_user: str = Depends(ge
     
     await sio.emit("servers_updated", {})
     return {"message": f"Installation of Forge on '{name}' started in background."}
+
+@fastapi_app.post("/api/server/{name}/upload-mod")
+async def upload_mod(name: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if not file.filename.endswith(".jar"):
+        raise HTTPException(status_code=400, detail="Only .jar files are allowed")
+        
+    mods_dir = os.path.abspath(f"data/servers/{name}/mods")
+    os.makedirs(mods_dir, exist_ok=True)
+    
+    file_path = os.path.join(mods_dir, file.filename)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        return {"message": f"Successfully uploaded {file.filename} to mods folder."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save mod: {str(e)}")
+
+@fastapi_app.post("/api/server/{name}/upload-modlist")
+async def upload_modlist(name: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    if not file.filename.endswith(".html"):
+        raise HTTPException(status_code=400, detail="Only CurseForge exported .html modlists are allowed")
+        
+    try:
+        content_bytes = await file.read()
+        html_content = content_bytes.decode("utf-8", errors="replace")
+        
+        # Clear/initialize creation.log so the logs modal shows fresh downloading output!
+        log_path = os.path.join("data", "servers", name, "creation.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(f"Initiated mod list download from CurseForge Modlist HTML: {file.filename}\n")
+            
+        # Start in background thread
+        threading.Thread(
+            target=api.post.server.mods.download_curseforge_mods_background,
+            args=(name, html_content),
+            daemon=True
+        ).start()
+        
+        # Broadcast status updates
+        await sio.emit("servers_updated", {})
+        
+        return {"message": "CurseForge mod list parsed. Downloading mods in background..."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse mod list: {str(e)}")
 
 @fastapi_app.post("/api/server/agree-eula")
 async def agree_eula(data: ServerNameRequest, current_user: str = Depends(get_current_user)):

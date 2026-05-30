@@ -311,6 +311,99 @@
     </div>
 
 
+    <!-- Upload Mods Modal -->
+    <div id="mods-modal-overlay" class="modal-overlay" onclick="hideModsModal(event)">
+        <div class="modal" style="max-width: 500px; width: 90%;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="mods-modal-title">Upload Mods: <span id="mods-server-name"></span></h3>
+                <button class="btn btn-icon" onclick="hideModsModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body" style="padding-top: 0; margin-bottom: var(--space-lg);">
+                <!-- Step 1: Select Source -->
+                <div id="mods-step-source" class="mods-step">
+                    <p class="mods-subtitle" style="margin-bottom: var(--space-xl); color: var(--text-secondary); font-size: 0.875rem;">
+                        Choose a source to add mods to your server.
+                    </p>
+                    
+                    <div class="mods-sources-grid" style="display: flex; flex-direction: column; gap: var(--space-md); margin-bottom: var(--space-lg);">
+                        <div class="mods-source-card" onclick="selectModsSource('curseforge')">
+                            <div class="mods-source-icon mods-source-icon--cf">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                            </div>
+                            <div class="mods-source-info">
+                                <span class="mods-source-title">CurseForge</span>
+                                <span class="mods-source-desc">Import an exported .html modlist to download automatically.</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mods-source-card" onclick="selectModsSource('local')">
+                            <div class="mods-source-icon mods-source-icon--local">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            </div>
+                            <div class="mods-source-info">
+                                <span class="mods-source-title">Upload .jar from this computer</span>
+                                <span class="mods-source-desc">Directly upload mod .jar files from your local system.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Upload File -->
+                <div id="mods-step-upload" class="mods-step" style="display: none;">
+                    <div style="display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-lg);">
+                        <button class="btn btn-icon" onclick="goBackToSourceSelect()" style="padding: 2px; color: var(--text-secondary);">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                        </button>
+                        <span id="mods-upload-subtitle" style="font-size: 0.875rem; color: var(--text-secondary); font-weight: 600;">Upload Files</span>
+                    </div>
+
+                    <div id="mods-drop-zone" class="drop-zone">
+                        <input type="file" id="mods-file-input" style="display: none;" />
+                        <div class="drop-zone-content">
+                            <div class="drop-zone-icon">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            </div>
+                            <p class="drop-zone-text">Drag & drop your file here or <span class="browse-link">browse</span></p>
+                            <p class="drop-zone-hint" id="mods-file-hint">Accepts .html modlist or .jar files</p>
+                        </div>
+                    </div>
+
+                    <!-- Selected File Info -->
+                    <div id="mods-selected-file" class="selected-file-info" style="display: none;">
+                        <div class="file-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        </div>
+                        <div class="file-details">
+                            <span id="mods-filename" class="file-name">filename.html</span>
+                            <span id="mods-filesize" class="file-size">0 KB</span>
+                        </div>
+                        <button class="btn btn-icon remove-file-btn" onclick="clearSelectedModFile()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div id="mods-progress-container" class="progress-bar-container" style="display: none; margin-top: var(--space-lg);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs); font-size: 0.75rem;">
+                            <span id="mods-progress-status" style="color: var(--text-secondary);">Uploading...</span>
+                            <span id="mods-progress-percent" style="font-weight: 600; color: var(--accent);">0%</span>
+                        </div>
+                        <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                            <div id="mods-progress-bar" class="progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 10px; transition: width 0.15s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-actions" style="margin-top: 0; padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-ghost" onclick="hideModsModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="btn-submit-upload" disabled onclick="submitModUpload()">Upload & Install</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div id="toast-container"></div>
 
