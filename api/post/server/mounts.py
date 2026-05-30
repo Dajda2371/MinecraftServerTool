@@ -52,9 +52,9 @@ def ensure_volume_directory(volume_name, subpath):
     import docker
     client = docker.from_env()
     try:
-        # eclipse-temurin:21-jdk is already pulled/built on the host for servers
+        # eclipse-temurin:25-jdk is already pulled/built on the host for servers
         client.containers.run(
-            image="eclipse-temurin:21-jdk",
+            image="eclipse-temurin:25-jdk",
             command=f"mkdir -p /vol/{subpath}",
             mounts=[
                 docker.types.Mount(
@@ -95,7 +95,7 @@ def write_volume_file(volume_name, subpath, content):
         b64_content = base64.b64encode(content.encode('utf-8')).decode('utf-8')
         cmd = f"bash -c 'mkdir -p /vol/{os.path.dirname(subpath)} && echo {b64_content} | base64 -d > /vol/{subpath}'"
         client.containers.run(
-            image="eclipse-temurin:21-jdk",
+            image="eclipse-temurin:25-jdk",
             command=cmd,
             mounts=[
                 docker.types.Mount(

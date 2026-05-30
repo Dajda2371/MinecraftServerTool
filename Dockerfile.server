@@ -12,7 +12,7 @@
 #   - No published ports (only reachable via mc-net -> Infrared)
 # ============================================================================
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 # gosu for privilege-dropping in the entrypoint.
 RUN apt-get update \

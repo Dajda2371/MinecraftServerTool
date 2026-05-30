@@ -19,7 +19,7 @@ from api.post.server.mounts import (
 
 LASTBUILDTOOLSVERSION = api.get.lastbuildtoolsversion.last_buildtools_version()
 BUILDTOOLSJAR = "BuildTools" + LASTBUILDTOOLSVERSION + ".jar"
-DEFAULT_BUILD_JAVA = "21"
+DEFAULT_BUILD_JAVA = "25"
 
 VANILLA_GIST_URL = "https://gist.githubusercontent.com/cliffano/77a982a7503669c3e1acb0a0cf6127e9/raw/minecraft-server-jar-downloads.md"
 
