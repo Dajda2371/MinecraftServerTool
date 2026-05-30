@@ -469,14 +469,6 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
-    import api.get.server.console
-    properties = api.get.server.console.get_server_properties(name)
-    if not properties:
-        raise HTTPException(status_code=400, detail=f"Server properties not found for {name}")
-        
-    rcon_port = int(properties.get("rcon.port", 25575))
-    rcon_password = properties.get("rcon.password", "admin")
-    
     server_info = api.db.get_server_info(name)
     if not server_info:
         raise HTTPException(status_code=404, detail="Server not found in DB")
@@ -484,12 +476,31 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     container_name = server_info.get("container_name") or f"mc-{name}"
     
     try:
-        from mcrcon import MCRcon
-        with MCRcon(container_name, rcon_password, rcon_port) as rcon:
-            response = rcon.command(command)
-        return {"response": response}
+        import docker
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        
+        # Attach to the container's stdin socket
+        # Note: We must have stdin_open=True enabled when running the container
+        sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
+        
+        # Prepare payload with newline
+        payload = (command + "\n").encode("utf-8")
+        
+        if hasattr(sock, '_sock'):
+            sock._sock.sendall(payload)
+        elif hasattr(sock, 'send'):
+            sock.send(payload)
+        else:
+            sock.write(payload)
+            
+        sock.close()
+        
+        # The command's response is printed directly to container stdout,
+        # which automatically gets broadcasted to the UI via log_stream_worker!
+        return {"response": ""}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to execute command: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to execute command on stdin: {str(e)}")
 
 # ============================================================================
 # Proxy (Infrared) Control & Status (Admin Only)

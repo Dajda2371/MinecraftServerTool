@@ -717,8 +717,6 @@ async function sendConsoleCommand(e) {
         const responseData = await apiFetch('/api/server/command', 'POST', { name: activeConsoleServer, command });
         if (responseData.response) {
             contentArea.textContent += `${responseData.response}\n`;
-        } else {
-            contentArea.textContent += `[System: Command sent successfully with empty response]\n`;
         }
     } catch (err) {
         contentArea.textContent += `[Error executing command: ${err.message}]\n`;

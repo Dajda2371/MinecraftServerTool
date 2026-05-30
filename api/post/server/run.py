@@ -141,6 +141,7 @@ def run_server(server_name):
             command=cmd,
             name=container_name,
             detach=True,
+            stdin_open=True,
             # NO port publishing — only reachable within mc-net
             network=DOCKER_NETWORK,
             mounts=[server_data_mount(server_name)],
