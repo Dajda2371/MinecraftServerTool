@@ -890,9 +890,17 @@ async def disconnect(sid):
             if not info["sids"]:
                 active_consoles.pop(server_name, None)
 
+def _parse_server_name(data) -> str:
+    if isinstance(data, dict):
+        val = data.get("name")
+        return str(val).strip() if val is not None else ""
+    elif isinstance(data, str):
+        return data.strip()
+    return ""
+
 @sio.on("join_console")
 async def handle_join_console(sid, data):
-    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    server_name = _parse_server_name(data)
     if not server_name:
         return
         
@@ -919,7 +927,7 @@ async def handle_join_console(sid, data):
 
 @sio.on("leave_console")
 async def handle_leave_console(sid, data):
-    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    server_name = _parse_server_name(data)
     if not server_name:
         return
         
@@ -937,7 +945,7 @@ async def handle_leave_console(sid, data):
 
 @sio.on("join_creation_logs")
 async def handle_join_creation_logs(sid, data):
-    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    server_name = _parse_server_name(data)
     if not server_name:
         return
         
@@ -966,7 +974,7 @@ async def handle_join_creation_logs(sid, data):
 
 @sio.on("leave_creation_logs")
 async def handle_leave_creation_logs(sid, data):
-    server_name = data.get("name", "").strip() if isinstance(data, dict) else ""
+    server_name = _parse_server_name(data)
     if not server_name:
         return
         
