@@ -60,13 +60,18 @@ def inject_commands_into_log(server_name):
         else:
             entries.append(("00:00:00", 1, raw))
 
+    # Without a baseline server timestamp in latest.log there's nothing to
+    # anchor commands to — bail rather than dumping unrelated history in.
+    if first_log_ts is None:
+        return
+
     added = 0
     for c in cmds:
         local = c["sent_at"].astimezone()
         if abs((local - anchor).total_seconds()) > 86400:
             continue
         ts = local.strftime("%H:%M:%S")
-        if first_log_ts is not None and ts < first_log_ts:
+        if ts < first_log_ts:
             continue
         line = f"[{ts}] [Console/CMD]: {c['command']}\n"
         if line in existing_lines:
