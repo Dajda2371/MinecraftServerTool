@@ -549,11 +549,16 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="rule-internal-port">Internal Port</label>
-                                <input type="number" id="rule-internal-port" placeholder="e.g. 8080" required min="1" max="65535">
+                                <input type="number" id="rule-internal-port" placeholder="e.g. 8080" required min="1" max="65535" oninput="handleInternalPortInput()">
                             </div>
                             <div class="form-group" id="rule-external-group">
                                 <label for="rule-external-port" id="rule-external-label">External Port</label>
-                                <input type="number" id="rule-external-port" placeholder="e.g. 8080 (leave blank to match internal)" min="1" max="65535">
+                                <div class="port-input-wrapper">
+                                    <input type="number" id="rule-external-port" placeholder="e.g. 8080 (leave blank to match internal)" min="1" max="65535">
+                                    <button type="button" class="btn btn-icon btn-sm" id="btn-lock-external-port" onclick="toggleExternalPortLock()" title="Lock to match internal port">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                    </button>
+                                </div>
                                 <span id="rule-external-hint" class="form-hint-inline" style="display: none; color: var(--text-muted); font-size: 0.725rem;">Allocated automatically (23000-23999)</span>
                             </div>
                         </div>

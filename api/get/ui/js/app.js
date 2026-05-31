@@ -1950,6 +1950,64 @@ async function viewSpecificServerLog(name, path) {
 // ============================================================================
 let activeFirewallServer = null;
 let firewallServerPort = 25565;
+let isExternalPortLocked = true;
+
+function updateExternalPortLockUI() {
+    const btn = document.getElementById('btn-lock-external-port');
+    const input = document.getElementById('rule-external-port');
+    const protocol = document.getElementById('rule-protocol').value;
+    
+    if (protocol === 'UDP') {
+        btn.style.display = 'none';
+        return;
+    }
+    
+    btn.style.display = 'flex';
+    
+    if (isExternalPortLocked) {
+        btn.classList.add('active');
+        btn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        `;
+        btn.title = "Unlock external port to customize";
+        
+        input.disabled = true;
+        input.value = document.getElementById('rule-internal-port').value || '';
+        input.placeholder = 'Same as internal port';
+    } else {
+        btn.classList.remove('active');
+        btn.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+        `;
+        btn.title = "Lock external port to match internal port";
+        
+        const label = document.getElementById('rule-label').value;
+        const isVoiceChatRule = label && label.toLowerCase().includes('simple voice chat');
+        if (isVoiceChatRule) {
+            input.disabled = true;
+        } else {
+            input.disabled = false;
+            input.placeholder = 'e.g. 8080 (leave blank to match internal)';
+        }
+    }
+}
+
+function toggleExternalPortLock(forceState) {
+    if (forceState !== undefined) {
+        isExternalPortLocked = forceState;
+    } else {
+        isExternalPortLocked = !isExternalPortLocked;
+    }
+    updateExternalPortLockUI();
+}
+
+function handleInternalPortInput() {
+    if (isExternalPortLocked && document.getElementById('rule-protocol').value === 'TCP') {
+        const internalVal = document.getElementById('rule-internal-port').value;
+        document.getElementById('rule-external-port').value = internalVal;
+    }
+}
+
 
 function triggerSettingsFirewall() {
     if (!activeSettingsServer) return;
@@ -1997,6 +2055,8 @@ function toggleAddRuleForm(show) {
         document.getElementById('add-rule-form').reset();
         document.getElementById('edit-rule-id').value = '';
         document.getElementById('btn-save-rule').textContent = 'Add Rule';
+        
+        isExternalPortLocked = true;
         handleRuleProtocolChange();
     } else {
         container.style.display = 'none';
@@ -2021,10 +2081,11 @@ function handleRuleProtocolChange() {
         externalInput.value = '';
         externalInput.placeholder = 'Auto-assigned (23000-23999)';
         hint.style.display = 'block';
+        document.getElementById('btn-lock-external-port').style.display = 'none';
     } else {
-        externalInput.disabled = false;
-        externalInput.placeholder = 'e.g. 8080 (leave blank to match internal)';
         hint.style.display = 'none';
+        document.getElementById('btn-lock-external-port').style.display = 'flex';
+        updateExternalPortLockUI();
     }
 }
 
@@ -2134,6 +2195,10 @@ function editRule(ruleJsonEscaped) {
     document.getElementById('rule-label').value = rule.label;
     document.getElementById('btn-save-rule').textContent = 'Update Rule';
     
+    // Infer and set lock state
+    const isLocked = !rule.external_port || (parseInt(rule.external_port) === parseInt(rule.internal_port));
+    toggleExternalPortLock(isLocked);
+    
     handleRuleProtocolChange();
     
     // Prevent modifying the internal port, protocol, or label for the primary server game port rule
@@ -2142,9 +2207,9 @@ function editRule(ruleJsonEscaped) {
     if (isPrimaryPortRule) {
         document.getElementById('rule-protocol').disabled = true;
         document.getElementById('rule-internal-port').disabled = true;
-        document.getElementById('rule-external-port').disabled = false; // Modification of external port is allowed!
         document.getElementById('rule-label').disabled = true; // Description is locked to "Primary Game Port"
         showToast('Primary Game Port rule cannot have its internal port, protocol, or description modified.', 'info');
+        updateExternalPortLockUI();
     } else if (isVoiceChatRule) {
         document.getElementById('rule-protocol').disabled = true;
         document.getElementById('rule-internal-port').disabled = true; // Locked, loaded from properties!
@@ -2169,8 +2234,8 @@ async function saveFirewallRule(e) {
     const internal_port = parseInt(document.getElementById('rule-internal-port').value);
     const externalVal = document.getElementById('rule-external-port').value;
     
-    // Fall back to matching internal port if left blank for TCP
-    const external_port = externalVal ? parseInt(externalVal) : (protocol === 'TCP' ? internal_port : null);
+    // Fall back to matching internal port if left blank or locked for TCP
+    const external_port = (protocol === 'TCP' && isExternalPortLocked) ? internal_port : (externalVal ? parseInt(externalVal) : (protocol === 'TCP' ? internal_port : null));
     const label = document.getElementById('rule-label').value;
     
     const payload = {

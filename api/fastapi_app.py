@@ -302,6 +302,7 @@ async def get_servers(current_user: str = Depends(get_current_user)):
         else:
             srv["status"] = "UNKNOWN"
         srv["eula_agreed"] = api.post.server.run.is_eula_agreed(srv["name"])
+        srv["port"] = api.db.get_server_port_from_properties(srv["name"])
     return {"servers": servers}
 
 @fastapi_app.get("/api/server/{name}")
@@ -319,6 +320,7 @@ async def get_server(name: str, current_user: str = Depends(get_current_user)):
     else:
         server["status"] = "UNKNOWN"
     server["eula_agreed"] = api.post.server.run.is_eula_agreed(name)
+    server["port"] = api.db.get_server_port_from_properties(name)
     return server
 
 @fastapi_app.get("/api/server/{name}/creation-logs")

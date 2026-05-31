@@ -1953,7 +1953,6 @@ input:checked + .toggle-slider:before {
     flex-direction: column;
     padding: var(--space-xl);
 }
-
 .quick-settings-modal-body {
     flex: 1;
     overflow-y: auto;
@@ -1962,4 +1961,51 @@ input:checked + .toggle-slider:before {
     min-height: 0;
 }
 
+/* --- Firewall Rule External Port Lock Styles --- */
+.port-input-wrapper {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+}
 
+.port-input-wrapper input {
+    flex: 1;
+}
+
+#btn-lock-external-port {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+    width: 38px;
+    min-width: 38px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-sizing: border-box;
+}
+
+#btn-lock-external-port:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(99, 102, 241, 0.08);
+}
+
+#btn-lock-external-port.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.25);
+}
+
+#btn-lock-external-port svg {
+    transition: transform 0.2s ease;
+}
+
+#btn-lock-external-port:active svg {
+    transform: scale(0.9);
+}
