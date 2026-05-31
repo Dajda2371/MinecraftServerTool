@@ -451,12 +451,11 @@ def start_mod_download_container(server_name, html_content):
     """
     Spawns an ephemeral Docker container using the same image as the management container
     to parse and download mods listed in a CurseForge HTML modlist export.
-    Tails the creation.log file to stream progress in real-time to Socket.IO.
+    Streams the container's standard output in real-time to Socket.IO and saves it to creation.log.
     """
     import socket
     import docker
     from api.post.server.mounts import server_data_mount, get_compose_labels, SERVER_DATA_VOLUME, write_volume_file
-    from api.post.server.create import follow_log_file
 
     log_message(server_name, "Spawning isolated mod downloader container...")
     
@@ -483,7 +482,8 @@ def start_mod_download_container(server_name, html_content):
     except Exception:
         pass
         
-    command = f"python3 -m api.post.server.mods --server {server_name} --html-file /data/modlist.html"
+    # Use -u for unbuffered output so print statements stream immediately
+    command = f"python3 -u -m api.post.server.mods --server {server_name} --html-file /data/modlist.html"
     
     # Pass along PG environment variables
     env = {
@@ -506,26 +506,44 @@ def start_mod_download_container(server_name, html_content):
         labels=get_compose_labels(f"mod-downloader-{server_name}"),
     )
     
-    # 3. Monitor container logs in a separate thread and cleanup
-    log_path = os.path.join("data", "servers", server_name, "creation.log")
-    
+    # 3. Monitor container stdout logs stream in real-time and cleanup
     def monitor_and_cleanup():
-        stop_event = threading.Event()
-        log_thread = threading.Thread(
-            target=follow_log_file,
-            args=(log_path, stop_event, server_name),
-            daemon=True,
-        )
-        log_thread.start()
-        
+        # Clear/initialize creation.log on host so it starts clean
+        log_path = os.path.join("data", "servers", server_name, "creation.log")
+        try:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(f"Initiated mod list download from CurseForge Modlist uploader\n")
+        except Exception:
+            pass
+
+        try:
+            # Stream logs directly from the docker engine stdout/stderr
+            for line in container.logs(stream=True, follow=True):
+                decoded = line.decode("utf-8", errors="replace")
+                
+                # Append to creation.log on host
+                try:
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(decoded)
+                except Exception as write_err:
+                    print(f"[Log Write Error] {write_err}")
+                
+                # Push in real-time to Socket.IO
+                if log_callback:
+                    try:
+                        log_callback(server_name, decoded)
+                    except Exception as e:
+                        print(f"[LogCallback Error] {e}")
+        except Exception as stream_err:
+            print(f"[Log Stream Error] {stream_err}")
+            
         try:
             container.wait()
         except Exception:
             pass
             
         time.sleep(2)
-        stop_event.set()
-        log_thread.join()
         
         # Remove completed container
         try:
