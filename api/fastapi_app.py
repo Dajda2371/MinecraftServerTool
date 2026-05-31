@@ -28,6 +28,7 @@ import api.post.user.assign_memory
 import api.post.user.reset_password
 import api.post.user.create
 import api.post.user.delete
+import api.voicechat
 
 # Define the absolute directory to serve frontend files from
 frontend_dir = Path(__file__).parent.resolve() / "get" / "ui"
@@ -197,6 +198,19 @@ class ResetPasswordRequest(BaseModel):
 class CommandRequest(BaseModel):
     name: str
     command: str
+
+class FirewallRuleCreate(BaseModel):
+    protocol: str
+    enabled: bool = True
+    internal_port: int
+    external_port: Optional[int] = None
+    label: str = ""
+
+class FirewallRuleUpdate(BaseModel):
+    enabled: bool
+    internal_port: int
+    external_port: Optional[int] = None
+    label: str = ""
 
 # ============================================================================
 # Auth Endpoints
@@ -1172,6 +1186,191 @@ async def handle_leave_creation_logs(sid, data):
     room = f"logs:{server_name}"
     await sio.leave_room(sid, room)
     print(f"[WS Logs] Client {sid} left creation logs room for: {server_name}")
+
+# ============================================================================
+# Firewall Endpoints
+# ============================================================================
+@fastapi_app.get("/api/server/{name}/firewall")
+async def get_server_firewall(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    rules = api.db.get_server_firewall_rules(name)
+    vc_info = api.voicechat.detect_voicechat(name)
+    
+    return {
+        "rules": rules,
+        "voicechat": vc_info
+    }
+
+@fastapi_app.post("/api/server/{name}/firewall/rule")
+async def create_firewall_rule(name: str, data: FirewallRuleCreate, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    protocol = data.protocol.strip().upper()
+    if protocol not in ("TCP", "UDP"):
+        raise HTTPException(status_code=400, detail="Protocol must be TCP or UDP")
+        
+    internal_port = data.internal_port
+    if not (1 <= internal_port <= 65535):
+        raise HTTPException(status_code=400, detail="Internal port must be between 1 and 65535")
+        
+    if protocol == "UDP":
+        try:
+            external_port = api.db.get_next_available_udp_port()
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
+    else:
+        external_port = data.external_port
+        if not external_port or not (1 <= external_port <= 65535):
+            raise HTTPException(status_code=400, detail="External port must be between 1 and 65535 for TCP rules")
+            
+    # Check collision
+    if api.db.check_external_port_collision(protocol, external_port):
+        raise HTTPException(status_code=400, detail=f"Port collision: external port {external_port} ({protocol}) is already mapped")
+        
+    label = data.label.strip()
+    
+    rule_id = api.db.add_firewall_rule(name, protocol, data.enabled, internal_port, external_port, label)
+    
+    # If this is voicechat port, sync properties file immediately
+    try:
+        api.voicechat.sync_voicechat_properties_if_needed(name)
+    except Exception as e:
+        print(f"[VoiceChat Sync Error] {e}")
+        
+    return {
+        "id": rule_id,
+        "server_name": name,
+        "protocol": protocol,
+        "enabled": data.enabled,
+        "internal_port": internal_port,
+        "external_port": external_port,
+        "label": label
+    }
+
+@fastapi_app.put("/api/server/{name}/firewall/rule/{rule_id}")
+async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    rule = api.db.get_firewall_rule(rule_id)
+    if not rule or rule["server_name"] != name:
+        raise HTTPException(status_code=404, detail="Firewall rule not found for this server")
+        
+    internal_port = data.internal_port
+    if not (1 <= internal_port <= 65535):
+        raise HTTPException(status_code=400, detail="Internal port must be between 1 and 65535")
+        
+    protocol = rule["protocol"]
+    
+    if protocol == "TCP":
+        external_port = data.external_port
+        if not external_port or not (1 <= external_port <= 65535):
+            raise HTTPException(status_code=400, detail="External port must be between 1 and 65535 for TCP rules")
+        # Check collision
+        if api.db.check_external_port_collision("TCP", external_port, exclude_id=rule_id):
+            raise HTTPException(status_code=400, detail=f"Port collision: external port {external_port} (TCP) is already mapped")
+            
+        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, data.label.strip(), external_port)
+    else:
+        # For UDP, external port is FIXED
+        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, data.label.strip())
+        
+    # Sync voicechat properties file immediately
+    try:
+        api.voicechat.sync_voicechat_properties_if_needed(name)
+    except Exception as e:
+        print(f"[VoiceChat Sync Error] {e}")
+        
+    return {"message": "Firewall rule updated successfully"}
+
+@fastapi_app.delete("/api/server/{name}/firewall/rule/{rule_id}")
+async def delete_firewall_rule(name: str, rule_id: int, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    rule = api.db.get_firewall_rule(rule_id)
+    if not rule or rule["server_name"] != name:
+        raise HTTPException(status_code=404, detail="Firewall rule not found for this server")
+        
+    api.db.delete_firewall_rule(rule_id)
+    
+    # Sync voicechat properties file immediately (removes voicechat rule association)
+    try:
+        api.voicechat.sync_voicechat_properties_if_needed(name)
+    except Exception as e:
+        print(f"[VoiceChat Sync Error] {e}")
+        
+    return {"message": "Firewall rule deleted successfully"}
+
+@fastapi_app.post("/api/server/{name}/firewall/apply")
+async def apply_firewall_rules(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    # Recreate the server container
+    result = await asyncio.to_thread(api.post.server.run.run_server, name)
+    await sio.emit("servers_updated", {})
+    return {"message": result}
+
+@fastapi_app.post("/api/server/{name}/firewall/quick-add-voicechat")
+async def quick_add_voicechat_rule(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    # 1. Detect voicechat
+    vc = api.voicechat.detect_voicechat(name)
+    if not vc["detected"]:
+        raise HTTPException(status_code=400, detail="Simple Voice Chat not detected on this server")
+        
+    # 2. Get active/default port
+    internal_port = vc["current_port"] if vc["current_port"] else 24454
+    
+    # 3. Check duplicate rules
+    rules = api.db.get_server_firewall_rules(name)
+    for r in rules:
+        if r["protocol"] == "UDP" and (r["label"].strip().lower() == "simple voice chat" or r["internal_port"] == internal_port):
+            raise HTTPException(status_code=400, detail="A firewall rule for Simple Voice Chat already exists")
+            
+    # 4. Allocate UDP port
+    try:
+        external_port = api.db.get_next_available_udp_port()
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+        
+    if api.db.check_external_port_collision("UDP", external_port):
+        raise HTTPException(status_code=400, detail=f"UDP external port {external_port} is already in use")
+        
+    # 5. Create rule
+    rule_id = api.db.add_firewall_rule(name, "UDP", True, internal_port, external_port, "Simple Voice Chat")
+    
+    # 6. Surgical write to properties
+    try:
+        server_info = api.db.get_server_info(name)
+        hostname = server_info.get("hostname") if server_info else None
+        voice_host = f"{hostname}:{external_port}" if hostname else f"<public-host>:{external_port}"
+        
+        api.voicechat.write_or_update_voicechat_properties(vc["config_path"], internal_port, voice_host)
+    except Exception as prop_err:
+        print(f"[VoiceChat Quick-Add Props Edit Error] {prop_err}")
+        
+    return {
+        "id": rule_id,
+        "server_name": name,
+        "protocol": "UDP",
+        "enabled": True,
+        "internal_port": internal_port,
+        "external_port": external_port,
+        "label": "Simple Voice Chat"
+    }
 
 # ============================================================================
 # Static Files & View Routing

@@ -1785,3 +1785,287 @@ async function viewSpecificServerLog(name, path) {
         showToast(`Failed to load log file: ${err.message}`, 'error');
     }
 }
+
+// ============================================================================
+// Firewall & Voice Chat Integration Controller
+// ============================================================================
+let activeFirewallServer = null;
+
+function triggerSettingsFirewall() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    setTimeout(() => {
+        showFirewallModal(name);
+    }, 200);
+}
+
+async function showFirewallModal(name) {
+    activeFirewallServer = name;
+    document.getElementById('firewall-server-name').textContent = name;
+    document.getElementById('firewall-modal-overlay').classList.add('is-visible');
+    toggleAddRuleForm(false);
+    await loadFirewallRules();
+}
+
+function hideFirewallModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('firewall-modal-overlay').classList.remove('is-visible');
+    activeFirewallServer = null;
+}
+
+function toggleAddRuleForm(show) {
+    const container = document.getElementById('add-rule-form-container');
+    const toggleBtn = document.getElementById('btn-toggle-add-rule');
+    
+    if (show === undefined) {
+        show = container.style.display === 'none';
+    }
+    
+    if (show) {
+        container.style.display = 'block';
+        toggleBtn.textContent = 'Hide Form';
+        document.getElementById('add-rule-form').reset();
+        document.getElementById('edit-rule-id').value = '';
+        document.getElementById('btn-save-rule').textContent = 'Add Rule';
+        handleRuleProtocolChange();
+    } else {
+        container.style.display = 'none';
+        toggleBtn.textContent = 'Add Rule';
+    }
+}
+
+function handleRuleProtocolChange() {
+    const protocol = document.getElementById('rule-protocol').value;
+    const externalInput = document.getElementById('rule-external-port');
+    const externalLabel = document.getElementById('rule-external-label');
+    const hint = document.getElementById('rule-external-hint');
+    
+    if (protocol === 'UDP') {
+        externalInput.required = false;
+        externalInput.disabled = true;
+        externalInput.value = '';
+        externalInput.placeholder = 'Auto-assigned (23000-23999)';
+        hint.style.display = 'block';
+    } else {
+        externalInput.required = true;
+        externalInput.disabled = false;
+        externalInput.placeholder = 'e.g. 8080';
+        hint.style.display = 'none';
+    }
+}
+
+async function loadFirewallRules() {
+    if (!activeFirewallServer) return;
+    try {
+        const data = await apiFetch(`/api/server/${activeFirewallServer}/firewall`);
+        renderFirewallRules(data.rules || []);
+        renderVoiceChatAlert(data.voicechat, data.rules || []);
+    } catch (err) {
+        showToast(`Failed to load firewall rules: ${err.message}`, 'error');
+    }
+}
+
+function renderFirewallRules(rules) {
+    const tbody = document.getElementById('firewall-rules-tbody');
+    const emptyState = document.getElementById('firewall-rules-empty');
+    tbody.innerHTML = '';
+    
+    if (rules.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+    
+    rules.forEach(rule => {
+        const tr = document.createElement('tr');
+        const protoBadge = rule.protocol === 'TCP' ? 'badge-proto--tcp' : 'badge-proto--udp';
+        const labelHtml = rule.label ? escapeHtml(rule.label) : '<span style="color: var(--text-muted); font-style: italic;">No description</span>';
+        
+        // Escape whole rule object securely for inline onclick usage
+        const ruleEscaped = escapeAttr(JSON.stringify(rule));
+        
+        tr.innerHTML = `
+            <td><span class="badge-proto ${protoBadge}">${rule.protocol}</span></td>
+            <td><strong>${rule.internal_port}</strong></td>
+            <td><strong>${rule.external_port || '—'}</strong></td>
+            <td>${labelHtml}</td>
+            <td style="text-align: center;">
+                <label class="toggle-switch">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} onchange="toggleRuleEnabled(${rule.id}, ${rule.enabled})">
+                    <span class="toggle-slider"></span>
+                </label>
+            </td>
+            <td style="text-align: right;">
+                <button class="btn btn-icon btn-sm" onclick="editRule('${ruleEscaped}')" title="Edit Rule">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+                <button class="btn btn-icon btn-sm" onclick="deleteRule(${rule.id})" title="Delete Rule">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderVoiceChatAlert(voicechat, rules) {
+    const alertBox = document.getElementById('voicechat-detect-alert');
+    if (!voicechat || !voicechat.detected) {
+        alertBox.style.display = 'none';
+        return;
+    }
+    
+    const internalPort = voicechat.current_port || 24454;
+    const ruleExists = rules.some(r => r.protocol === 'UDP' && (r.label.toLowerCase().includes('voice') || r.internal_port === internalPort));
+    
+    if (ruleExists) {
+        alertBox.style.display = 'none';
+    } else {
+        alertBox.style.display = 'flex';
+    }
+}
+
+async function quickAddVoiceChat() {
+    if (!activeFirewallServer) return;
+    try {
+        showToast('Adding Voice Chat firewall rule...', 'info');
+        await apiFetch(`/api/server/${activeFirewallServer}/firewall/quick-add-voicechat`, 'POST');
+        showToast('Voice Chat rule added successfully!', 'success');
+        await loadFirewallRules();
+    } catch (err) {
+        showToast(`Failed to add Voice Chat rule: ${err.message}`, 'error');
+    }
+}
+
+function editRule(ruleJsonEscaped) {
+    // Unescape and parse the JSON string
+    const txt = document.createElement('textarea');
+    txt.innerHTML = ruleJsonEscaped;
+    const rule = JSON.parse(txt.value);
+    
+    toggleAddRuleForm(true);
+    document.getElementById('edit-rule-id').value = rule.id;
+    document.getElementById('rule-protocol').value = rule.protocol;
+    document.getElementById('rule-internal-port').value = rule.internal_port;
+    document.getElementById('rule-external-port').value = rule.external_port || '';
+    document.getElementById('rule-label').value = rule.label;
+    document.getElementById('btn-save-rule').textContent = 'Update Rule';
+    
+    handleRuleProtocolChange();
+    if (rule.protocol === 'UDP') {
+        document.getElementById('rule-external-port').disabled = true;
+    }
+}
+
+async function saveFirewallRule(e) {
+    e.preventDefault();
+    if (!activeFirewallServer) return;
+    
+    const ruleId = document.getElementById('edit-rule-id').value;
+    const protocol = document.getElementById('rule-protocol').value;
+    const internal_port = parseInt(document.getElementById('rule-internal-port').value);
+    const externalVal = document.getElementById('rule-external-port').value;
+    const external_port = externalVal ? parseInt(externalVal) : null;
+    const label = document.getElementById('rule-label').value;
+    
+    const payload = {
+        protocol,
+        enabled: true,
+        internal_port,
+        external_port,
+        label
+    };
+    
+    try {
+        if (ruleId) {
+            await apiFetch(`/api/server/${activeFirewallServer}/firewall/rule/${ruleId}`, 'PUT', payload);
+            showToast('Firewall rule updated successfully!', 'success');
+        } else {
+            await apiFetch(`/api/server/${activeFirewallServer}/firewall/rule`, 'POST', payload);
+            showToast('Firewall rule created successfully!', 'success');
+        }
+        toggleAddRuleForm(false);
+        await loadFirewallRules();
+    } catch (err) {
+        showToast(`Failed to save firewall rule: ${err.message}`, 'error');
+    }
+}
+
+async function toggleRuleEnabled(ruleId, currentStatus) {
+    if (!activeFirewallServer) return;
+    try {
+        const data = await apiFetch(`/api/server/${activeFirewallServer}/firewall`);
+        const rule = data.rules.find(r => r.id === ruleId);
+        if (!rule) return;
+        
+        const payload = {
+            enabled: !currentStatus,
+            internal_port: rule.internal_port,
+            external_port: rule.external_port,
+            label: rule.label
+        };
+        
+        await apiFetch(`/api/server/${activeFirewallServer}/firewall/rule/${ruleId}`, 'PUT', payload);
+        showToast(`Rule ${payload.enabled ? 'enabled' : 'disabled'} successfully!`, 'success');
+        await loadFirewallRules();
+    } catch (err) {
+        showToast(`Failed to toggle rule: ${err.message}`, 'error');
+        await loadFirewallRules();
+    }
+}
+
+async function deleteRule(ruleId) {
+    if (!activeFirewallServer) return;
+    if (!confirm('Are you sure you want to delete this firewall rule?')) return;
+    
+    try {
+        await apiFetch(`/api/server/${activeFirewallServer}/firewall/rule/${ruleId}`, 'DELETE');
+        showToast('Firewall rule deleted successfully!', 'success');
+        await loadFirewallRules();
+    } catch (err) {
+        showToast(`Failed to delete firewall rule: ${err.message}`, 'error');
+    }
+}
+
+async function confirmApplyFirewall() {
+    if (!activeFirewallServer) return;
+    
+    // Check if the server is running by querying its current status
+    let isRunning = false;
+    try {
+        const srvInfo = await apiFetch(`/api/server/${activeFirewallServer}`);
+        isRunning = srvInfo && srvInfo.status === 'running';
+    } catch (e) {
+        // Fallback to locally cached servers array
+        const srv = servers.find(s => s.name === activeFirewallServer);
+        isRunning = srv && srv.status === 'running';
+    }
+    
+    let warningMsg = 'Apply changes now?\n\n';
+    if (isRunning) {
+        warningMsg += 'WARNING: This server is currently RUNNING. Applying changes will stop, recreate, and restart the container, which will disconnect all players.';
+    } else {
+        warningMsg += 'Applying changes will recreate the Docker container setup with the new ports. It will apply on the next server start.';
+    }
+    
+    if (!confirm(warningMsg)) return;
+    
+    const btn = document.getElementById('btn-apply-firewall');
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+    
+    try {
+        showToast('Applying firewall rules and recreating container...', 'info');
+        const res = await apiFetch(`/api/server/${activeFirewallServer}/firewall/apply`, 'POST');
+        showToast(res.message || 'Firewall rules applied successfully!', 'success');
+        hideFirewallModal();
+    } catch (err) {
+        showToast(`Failed to apply changes: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+    }
+}
+

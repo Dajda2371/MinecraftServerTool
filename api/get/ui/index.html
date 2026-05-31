@@ -434,10 +434,120 @@
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Install mods via CurseForge list or direct .jar</span>
                         </div>
                     </button>
+                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsFirewall()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
+                            <span style="font-weight: 600; font-size: 0.85rem;">Firewall</span>
+                            <span style="font-size: 0.725rem; color: var(--text-muted);">Manage exposed container ports (TCP & UDP)</span>
+                        </div>
+                    </button>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: var(--space-lg);">
                 <button type="button" class="btn btn-ghost" onclick="hideServerSettingsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Firewall Modal -->
+    <div id="firewall-modal-overlay" class="modal-overlay" onclick="hideFirewallModal(event)">
+        <div class="modal modal--medium firewall-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Firewall: <span id="firewall-server-name"></span></h3>
+                <button class="btn btn-icon" onclick="hideFirewallModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            
+            <div class="modal-body firewall-modal-body">
+                <!-- Simple Voice Chat Quick Add Alert Box -->
+                <div id="voicechat-detect-alert" class="voicechat-alert-box" style="display: none;">
+                    <div class="voicechat-alert-info">
+                        <div class="voicechat-alert-badge">
+                            <span class="status-dot status-dot--green"></span>
+                            <span>Simple Voice Chat Detected</span>
+                        </div>
+                        <p class="voicechat-alert-text">One-click add the required UDP firewall rule to enable voice chat routing.</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="quickAddVoiceChat()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Add Voice Chat Rule
+                    </button>
+                </div>
+
+                <!-- Rules Header and Form Toggle -->
+                <div class="firewall-section-header">
+                    <h4>Port Mapping Rules</h4>
+                    <button class="btn btn-outline btn-sm" id="btn-toggle-add-rule" onclick="toggleAddRuleForm()">
+                        Add Rule
+                    </button>
+                </div>
+
+                <!-- Add Rule Form -->
+                <div id="add-rule-form-container" class="add-rule-card" style="display: none;">
+                    <form id="add-rule-form" onsubmit="saveFirewallRule(event)">
+                        <input type="hidden" id="edit-rule-id">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="rule-protocol">Protocol</label>
+                                <select id="rule-protocol" onchange="handleRuleProtocolChange()">
+                                    <option value="TCP" selected>TCP</option>
+                                    <option value="UDP">UDP</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="rule-internal-port">Internal Port</label>
+                                <input type="number" id="rule-internal-port" placeholder="e.g. 8080" required min="1" max="65535">
+                            </div>
+                            <div class="form-group" id="rule-external-group">
+                                <label for="rule-external-port" id="rule-external-label">External Port</label>
+                                <input type="number" id="rule-external-port" placeholder="e.g. 8080" required min="1" max="65535">
+                                <span id="rule-external-hint" class="form-hint-inline" style="display: none; color: var(--text-muted); font-size: 0.725rem;">Allocated automatically (23000-23999)</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="rule-label">Label / Description</label>
+                            <input type="text" id="rule-label" placeholder="e.g. Dynmap interface, Simple Voice Chat" autocomplete="off">
+                        </div>
+                        <div class="form-actions" style="margin-top: var(--space-md); padding-bottom: 0;">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleAddRuleForm(false)">Cancel</button>
+                            <button type="submit" class="btn btn-primary btn-sm" id="btn-save-rule">Save Rule</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Rules Table -->
+                <div class="firewall-rules-list-container">
+                    <table class="firewall-table">
+                        <thead>
+                            <tr>
+                                <th>Protocol</th>
+                                <th>Internal</th>
+                                <th>External</th>
+                                <th>Description</th>
+                                <th style="text-align: center;">Status</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="firewall-rules-tbody">
+                            <!-- Rule rows injected by JS -->
+                        </tbody>
+                    </table>
+                    <div id="firewall-rules-empty" class="empty-state-small" style="display: none; padding: var(--space-xl); text-align: center; color: var(--text-muted);">
+                        No custom port mappings configured for this server.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer / Apply Changes Section -->
+            <div class="form-actions firewall-footer">
+                <div class="firewall-footer-warning" style="flex: 1; text-align: left; font-size: 0.75rem; color: var(--text-muted); line-height: 1.3;">
+                    <span style="color: var(--warning); font-weight: 600;">Note:</span> Apply recreates the container.
+                </div>
+                <button type="button" class="btn btn-ghost" onclick="hideFirewallModal()">Close</button>
+                <button type="button" class="btn btn-primary" id="btn-apply-firewall" onclick="confirmApplyFirewall()">
+                    Apply Port Changes
+                </button>
             </div>
         </div>
     </div>

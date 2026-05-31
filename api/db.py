@@ -113,6 +113,20 @@ def init_db():
         "ON console_commands (server_name, sent_at)"
     )
 
+    # Firewall Rules Table and migration
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS firewall_rules (
+            id SERIAL PRIMARY KEY,
+            server_name TEXT NOT NULL REFERENCES servers(name) ON DELETE CASCADE,
+            protocol TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            internal_port INTEGER NOT NULL,
+            external_port INTEGER NOT NULL,
+            label TEXT
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_firewall_rules_server ON firewall_rules(server_name)")
+
     conn.commit()
     conn.close()
 
@@ -432,3 +446,160 @@ def update_server_memory(server_name, memory_mb):
     conn.commit()
     conn.close()
     return ok
+
+
+# ---------------------------------------------------------------------------
+# Firewall Rules CRUD & Helpers
+# ---------------------------------------------------------------------------
+
+def get_server_firewall_rules(server_name: str):
+    """Return a list of all firewall rules for a server."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, server_name, protocol, enabled, internal_port, external_port, label "
+        "FROM firewall_rules WHERE server_name = %s ORDER BY id ASC",
+        (server_name,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    
+    rules = []
+    for r in rows:
+        rules.append({
+            "id": r[0],
+            "server_name": r[1],
+            "protocol": r[2],
+            "enabled": r[3],
+            "internal_port": r[4],
+            "external_port": r[5],
+            "label": r[6] or ""
+        })
+    return rules
+
+
+def get_firewall_rule(rule_id: int):
+    """Retrieve a single firewall rule by ID."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, server_name, protocol, enabled, internal_port, external_port, label "
+        "FROM firewall_rules WHERE id = %s",
+        (rule_id,)
+    )
+    r = cursor.fetchone()
+    conn.close()
+    if r:
+        return {
+            "id": r[0],
+            "server_name": r[1],
+            "protocol": r[2],
+            "enabled": r[3],
+            "internal_port": r[4],
+            "external_port": r[5],
+            "label": r[6] or ""
+        }
+    return None
+
+
+def check_external_port_collision(protocol: str, external_port: int, exclude_id: int = None) -> bool:
+    """
+    Check if a rule with the same protocol and external port already exists.
+    Optionally excludes a specific rule ID (useful for edits).
+    """
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    if exclude_id is not None:
+        cursor.execute(
+            "SELECT COUNT(*) FROM firewall_rules "
+            "WHERE protocol = %s AND external_port = %s AND id != %s",
+            (protocol, external_port, exclude_id)
+        )
+    else:
+        cursor.execute(
+            "SELECT COUNT(*) FROM firewall_rules "
+            "WHERE protocol = %s AND external_port = %s",
+            (protocol, external_port)
+        )
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count > 0
+
+
+def get_next_available_udp_port() -> int:
+    """
+    Find the lowest available UDP external port in range 23000-23999.
+    Excludes any ports already registered across all servers.
+    """
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT external_port FROM firewall_rules WHERE protocol = 'UDP'")
+    used_ports = {row[0] for row in cursor.fetchall()}
+    conn.close()
+    
+    for port in range(23000, 24000):
+        if port not in used_ports:
+            return port
+    raise ValueError("All UDP ports in range 23000-23999 are exhausted.")
+
+
+def add_firewall_rule(server_name: str, protocol: str, enabled: bool, internal_port: int, external_port: int, label: str) -> int:
+    """Add a new firewall rule to the database and return its ID."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO firewall_rules (server_name, protocol, enabled, internal_port, external_port, label) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (server_name, protocol.upper(), enabled, internal_port, external_port, label)
+    )
+    rule_id = cursor.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return rule_id
+
+
+def update_firewall_rule(rule_id: int, enabled: bool, internal_port: int, label: str, external_port: int = None) -> bool:
+    """
+    Update an existing firewall rule.
+    If external_port is provided (only allowed/used for TCP rules), it updates it as well.
+    """
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    
+    if external_port is not None:
+        cursor.execute(
+            "UPDATE firewall_rules "
+            "SET enabled = %s, internal_port = %s, label = %s, external_port = %s "
+            "WHERE id = %s",
+            (enabled, internal_port, label, external_port, rule_id)
+        )
+    else:
+        cursor.execute(
+            "UPDATE firewall_rules "
+            "SET enabled = %s, internal_port = %s, label = %s "
+            "WHERE id = %s",
+            (enabled, internal_port, label, rule_id)
+        )
+    
+    updated = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return updated
+
+
+def delete_firewall_rule(rule_id: int) -> bool:
+    """Delete a firewall rule by ID."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM firewall_rules WHERE id = %s", (rule_id,))
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted

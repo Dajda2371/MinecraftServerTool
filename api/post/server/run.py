@@ -11,7 +11,8 @@ Key properties:
 import os
 import docker
 
-from api.db import get_server_info, update_server_info
+from api.db import get_server_info, update_server_info, get_server_firewall_rules
+from api.voicechat import sync_voicechat_properties_if_needed
 from api.infrared import reload_proxy_config
 from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME, get_compose_labels
 
@@ -80,6 +81,12 @@ def run_server(server_name):
     - Mounts the server data as a bind volume
     - Runs as non-root user
     """
+    # Sync voicechat properties if installed
+    try:
+        sync_voicechat_properties_if_needed(server_name)
+    except Exception as vc_err:
+        print(f"[VoiceChat Sync] Warning: failed to sync properties: {vc_err}")
+
     # Get server details from DB
     info = get_server_info(server_name)
     if not info:
@@ -167,15 +174,37 @@ def run_server(server_name):
         cmd = f"java -Xmx{java_heap}M -Xms{java_heap}M -jar {jar_filename} nogui --port {port}"
 
     try:
-        print(f"[Docker] Starting container '{container_name}' on internal port {port}...")
+        # Fetch active firewall rules
+        docker_ports = {}
+        try:
+            rules = get_server_firewall_rules(server_name)
+            enabled_rules = [r for r in rules if r["enabled"]]
+            for r in enabled_rules:
+                proto = r["protocol"].lower()
+                internal = r["internal_port"]
+                external = r["external_port"]
+                key = f"{internal}/{proto}"
+                if key not in docker_ports:
+                    docker_ports[key] = []
+                docker_ports[key].append(external)
+                
+            # Simplify list if only one item is mapped to internal port
+            for key, val in list(docker_ports.items()):
+                if len(val) == 1:
+                    docker_ports[key] = val[0]
+        except Exception as fw_err:
+            print(f"[Firewall] Warning: failed to fetch firewall rules: {fw_err}")
+
+        print(f"[Docker] Starting container '{container_name}' on internal port {port} with dynamic ports: {docker_ports}...")
         container = client.containers.run(
             image=DEFAULT_SERVER_IMAGE,
             command=cmd,
             name=container_name,
             detach=True,
             stdin_open=True,
-            # NO port publishing — only reachable within mc-net
+            # Connect internal network and also publish host ports
             network=DOCKER_NETWORK,
+            ports=docker_ports,
             mounts=[server_data_mount(server_name)],
             working_dir="/data",
             # Entrypoint in the image starts as root, chowns /data, then

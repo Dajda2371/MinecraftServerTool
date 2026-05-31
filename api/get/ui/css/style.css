@@ -1714,4 +1714,212 @@ body::before {
     border-color: var(--accent);
 }
 
+/* --- Firewall --- */
+.modal--medium.firewall-modal {
+    max-width: 850px;
+    width: 90vw;
+    display: flex;
+    flex-direction: column;
+}
+
+.firewall-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    min-height: 0;
+}
+
+/* Voice Chat Alert Box */
+.voicechat-alert-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(16, 185, 129, 0.06);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: var(--radius-md);
+    padding: var(--space-md) var(--space-lg);
+    gap: var(--space-lg);
+    animation: fade-in-up var(--duration-normal) var(--ease) both;
+}
+
+.voicechat-alert-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.voicechat-alert-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--green);
+    letter-spacing: 0.02em;
+}
+
+.voicechat-alert-text {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.status-dot--green {
+    background-color: var(--green) !important;
+    box-shadow: 0 0 8px var(--green);
+}
+
+/* Sections */
+.firewall-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: var(--space-xs);
+}
+
+.firewall-section-header h4 {
+    margin: 0;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+/* Add Rule Card */
+.add-rule-card {
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-lg);
+    animation: fade-in-up var(--duration-normal) var(--ease) both;
+}
+
+.form-hint-inline {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* Table Style */
+.firewall-rules-list-container {
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.005);
+}
+
+.firewall-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+    text-align: left;
+}
+
+.firewall-table th,
+.firewall-table td {
+    padding: 12px var(--space-md);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.firewall-table th {
+    background: rgba(255, 255, 255, 0.02);
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    user-select: none;
+}
+
+.firewall-table tr:last-child td {
+    border-bottom: none;
+}
+
+.firewall-table tr:hover td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+/* Protocol Badges */
+.badge-proto {
+    display: inline-flex;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.65rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.badge-proto--tcp {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+.badge-proto--udp {
+    background: rgba(139, 92, 246, 0.1);
+    color: #8b5cf6;
+}
+
+/* Status Toggle inside cell */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 18px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: .3s;
+    border-radius: 34px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 12px;
+    width: 12px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-muted);
+    transition: .3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--green);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(14px);
+    background-color: white;
+}
+
+.empty-state-small {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.firewall-footer {
+    display: flex;
+    align-items: center;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: var(--space-md);
+    margin-top: 0;
+}
+
 
