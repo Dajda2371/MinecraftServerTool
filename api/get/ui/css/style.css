@@ -1945,4 +1945,9 @@ input:checked + .toggle-slider:before {
     margin-top: 0;
 }
 
+.modal--medium.quick-settings-modal {
+    max-width: 650px;
+    width: 90vw;
+}
+
 

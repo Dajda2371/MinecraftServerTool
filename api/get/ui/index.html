@@ -427,6 +427,13 @@
             </div>
             <div class="modal-body settings-modal-body">
                 <div class="settings-actions-group" style="display: flex; flex-direction: column; gap: var(--space-md); margin-top: var(--space-md);">
+                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsQuickSettings()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
+                            <span style="font-weight: 600; font-size: 0.85rem;">Quick Settings</span>
+                            <span style="font-size: 0.725rem; color: var(--text-muted);">Configure server.properties (server-port, etc.)</span>
+                        </div>
+                    </button>
                     <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsModsUpload()">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
@@ -441,13 +448,6 @@
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Manage exposed container ports (TCP & UDP)</span>
                         </div>
                     </button>
-                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsQuickSettings()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
-                            <span style="font-weight: 600; font-size: 0.85rem;">Quick Settings</span>
-                            <span style="font-size: 0.725rem; color: var(--text-muted);">Configure server.properties (server-port, etc.)</span>
-                        </div>
-                    </button>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: var(--space-lg);">
@@ -458,7 +458,7 @@
 
     <!-- Server Quick Settings Modal -->
     <div id="quick-settings-modal-overlay" class="modal-overlay" onclick="hideQuickSettingsModal(event)">
-        <div class="modal modal--small quick-settings-modal" onclick="event.stopPropagation()">
+        <div class="modal modal--medium quick-settings-modal" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h3>Quick Settings: <span id="quick-settings-server-name"></span></h3>
                 <button class="btn btn-icon" onclick="hideQuickSettingsModal()">
