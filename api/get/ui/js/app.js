@@ -66,6 +66,13 @@ socket.on('logs_init', (data) => {
 socket.on('logs_append', (data) => {
     if (activeLogServer && data.name === activeLogServer) {
         const contentArea = document.getElementById('creation-logs-content');
+        
+        // Clear placeholder text if it's currently showing
+        if (contentArea.textContent === 'Loading logs...' || 
+            contentArea.textContent === 'No creation logs found yet. Please wait...') {
+            contentArea.textContent = '';
+        }
+        
         const isScrolledToBottom = contentArea.scrollHeight - contentArea.clientHeight <= contentArea.scrollTop + 30;
         
         contentArea.textContent += data.line;
