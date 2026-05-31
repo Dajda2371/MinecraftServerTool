@@ -12,6 +12,9 @@ let activeExplorerServer = null;
 let currentExplorerPath = "";
 let explorerChanges = {};
 let editorOriginalPath = null;
+let activeSettingsServer = null;
+let activeLogsServer = null;
+let activeLogsFilename = null;
 
 // --- Socket.IO Real-Time Client ---
 const socket = io();
@@ -219,7 +222,7 @@ function renderServers() {
         const isRunning = status === 'running';
 
         return `
-            <div class="server-card" style="animation-delay: ${i * 0.06}s" id="card-${srv.name}">
+            <div class="server-card" style="animation-delay: ${i * 0.06}s; cursor: pointer;" id="card-${srv.name}" onclick="showServerSettingsModal('${escapeAttr(srv.name)}')">
                 <div class="card-header">
                     <div class="card-title-group">
                         <span class="card-title">${escapeHtml(srv.name)}</span>
@@ -248,7 +251,7 @@ function renderServers() {
                             <span class="detail-label">Hostname</span>
                             <span class="detail-value">${escapeHtml(hostname)}</span>
                         </div>
-                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
+                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
                     </div>
@@ -257,87 +260,81 @@ function renderServers() {
                             <span class="detail-label">RAM Limit</span>
                             <span class="detail-value">${memory} MB</span>
                         </div>
-                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="showMemoryModal('${escapeAttr(srv.name)}', ${memory})">
+                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showMemoryModal('${escapeAttr(srv.name)}', ${memory})">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
                     </div>
                 </div>
                 <div class="card-actions">
                     ${status === 'downloading_mods'
-                        ? `<button class="btn btn-sm btn-ghost" onclick="showCreationLogs('${escapeAttr(srv.name)}')">
+                        ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                Logs
                            </button>
-                           <button class="btn btn-sm btn-danger" onclick="cancelModDownload('${escapeAttr(srv.name)}')">
+                           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelModDownload('${escapeAttr(srv.name)}')">
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                Cancel
                            </button>`
                         : status === 'creating'
-                            ? `<button class="btn btn-sm btn-ghost" onclick="showCreationLogs('${escapeAttr(srv.name)}')">
+                            ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                    Logs
                                </button>
-                               <button class="btn btn-sm btn-danger" onclick="cancelServerCreation('${escapeAttr(srv.name)}')">
+                               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelServerCreation('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                    Cancel
                                </button>`
                         : status === 'install_required'
-                            ? `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="installServer('${escapeAttr(srv.name)}')">
+                            ? `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="event.stopPropagation(); installServer('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                    Install
                                </button>
-                               <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                    Delete
                                </button>`
                             : !srv.eula_agreed
-                            ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="agreeToEula('${escapeAttr(srv.name)}')">
+                            ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="event.stopPropagation(); agreeToEula('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                    Agree to EULA
                                </button>
-                               <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                    Delete
                                </button>`
                             : isRunning
-                                ? `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="showConsoleModal('${escapeAttr(srv.name)}')">
+                                ? `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="event.stopPropagation(); showConsoleModal('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
                                        Console
                                    </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="showFileExplorerModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                       Files
-                                   </button>
-                                   <button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
+                                   <button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); stopServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                                        Stop
                                    </button>
-                                   ${(type.toLowerCase() === 'forge' || type.toLowerCase() === 'neoforge')
-                                       ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
-                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                              Upload Mods
-                                          </button>`
-                                       : ''
-                                   }`
-                                : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                       Start
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                        Files
                                    </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                                       Logs
+                                   </button>`
+                                : `<button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startServer('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                       Start
+                                   </button>
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                        Delete
                                    </button>
-                                   ${(type.toLowerCase() === 'forge' || type.toLowerCase() === 'neoforge')
-                                       ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
-                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                              Upload Mods
-                                          </button>`
-                                       : ''
-                                   }`
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                       Files
+                                   </button>
+                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                                       Logs
+                                   </button>`
                     }
                 </div>
             </div>
@@ -1677,4 +1674,114 @@ function formatBytes(bytes, decimals = 2) {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+
+// --- Server Settings Controller ---
+function showServerSettingsModal(name) {
+    activeSettingsServer = name;
+    document.getElementById('settings-server-name').textContent = name;
+    document.getElementById('settings-modal-overlay').classList.add('is-visible');
+}
+
+function hideServerSettingsModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('settings-modal-overlay').classList.remove('is-visible');
+    activeSettingsServer = null;
+}
+
+function triggerSettingsModsUpload() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    // Open mods modal directly
+    setTimeout(() => {
+        showModsModal(name);
+    }, 200);
+}
+
+// --- Server Logs Modal Controller ---
+async function showServerLogsModal(name) {
+    activeLogsServer = name;
+    activeLogsFilename = null;
+    
+    document.getElementById('server-logs-title-name').textContent = name;
+    document.getElementById('active-log-filename-label').textContent = "No log selected";
+    document.getElementById('server-logs-viewer-pre').textContent = "Select a log file on the left to read its contents.";
+    
+    document.getElementById('server-logs-modal-overlay').classList.add('is-visible');
+    await loadServerLogsList();
+}
+
+function hideServerLogsModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('server-logs-modal-overlay').classList.remove('is-visible');
+    activeLogsServer = null;
+    activeLogsFilename = null;
+}
+
+async function loadServerLogsList() {
+    try {
+        const data = await apiFetch(`/api/server/${activeLogsServer}/logs`);
+        renderServerLogsList(data.logs || []);
+    } catch (err) {
+        showToast(`Failed to load logs list: ${err.message}`, 'error');
+    }
+}
+
+function renderServerLogsList(logs) {
+    const listContainer = document.getElementById('logs-file-list-container');
+    listContainer.innerHTML = '';
+    
+    if (logs.length === 0) {
+        listContainer.innerHTML = `
+            <div style="padding: var(--space-lg); text-align: center; color: var(--text-muted); font-size: 0.775rem;">
+                No log files found in logs/ directory
+            </div>
+        `;
+        return;
+    }
+    
+    logs.forEach(log => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'log-file-item';
+        if (activeLogsFilename === log.name) {
+            itemEl.classList.add('is-active');
+        }
+        
+        const dateStr = new Date(log.mtime * 1000).toLocaleString();
+        const sizeStr = formatBytes(log.size);
+        
+        itemEl.innerHTML = `
+            <span class="log-file-name">${escapeHtml(log.name)}</span>
+            <div class="log-file-meta">
+                <span>${sizeStr}</span>
+                <span>${dateStr}</span>
+            </div>
+        `;
+        
+        itemEl.onclick = async () => {
+            document.querySelectorAll('.log-file-item').forEach(el => el.classList.remove('is-active'));
+            itemEl.classList.add('is-active');
+            await viewSpecificServerLog(log.name, log.path);
+        };
+        
+        listContainer.appendChild(itemEl);
+    });
+}
+
+async function viewSpecificServerLog(name, path) {
+    activeLogsFilename = name;
+    document.getElementById('active-log-filename-label').textContent = `logs/${name}`;
+    const preEl = document.getElementById('server-logs-viewer-pre');
+    preEl.textContent = "Loading log content...";
+    
+    try {
+        const data = await apiFetch(`/api/server/${activeLogsServer}/file?path=${encodeURIComponent(path)}`);
+        preEl.textContent = data.content;
+        preEl.scrollTop = 0; // Scroll back to top of new log
+    } catch (err) {
+        preEl.textContent = `Error loading log: ${err.message}`;
+        showToast(`Failed to load log file: ${err.message}`, 'error');
+    }
 }

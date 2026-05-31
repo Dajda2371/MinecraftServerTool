@@ -527,6 +527,16 @@ async def get_server_file(name: str, path: str, current_user: str = Depends(get_
         raise HTTPException(status_code=400, detail="Invalid or missing file path")
         
     try:
+        # Check if gzip log file
+        if path.endswith(".gz"):
+            import gzip
+            try:
+                with gzip.open(target_file, "rt", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                return {"content": content, "is_binary": False, "path": path, "size": len(content)}
+            except Exception as gz_err:
+                raise HTTPException(status_code=500, detail=f"Failed to unzip log: {str(gz_err)}")
+                
         # Check if text file by trying to read it
         with open(target_file, "rb") as f:
             raw_content = f.read()
@@ -540,6 +550,41 @@ async def get_server_file(name: str, path: str, current_user: str = Depends(get_
         return {"content": content, "is_binary": is_binary, "path": path, "size": len(raw_content)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+@fastapi_app.get("/api/server/{name}/logs")
+async def list_server_logs(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    server_dir = os.path.abspath(f"data/servers/{name}")
+    logs_dir = os.path.abspath(os.path.join(server_dir, "logs"))
+    
+    if not os.path.exists(logs_dir):
+        return {"logs": []}
+        
+    logs_list = []
+    try:
+        for item in os.listdir(logs_dir):
+            if item.startswith('.'):
+                continue
+            item_path = os.path.join(logs_dir, item)
+            if os.path.isfile(item_path):
+                rel_path = os.path.relpath(item_path, server_dir)
+                size = os.path.getsize(item_path)
+                mtime = os.path.getmtime(item_path)
+                logs_list.append({
+                    "name": item,
+                    "path": rel_path,
+                    "size": size,
+                    "mtime": mtime
+                })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list logs: {str(e)}")
+        
+    # Sort by modification time descending (newest first)
+    logs_list.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"logs": logs_list}
 
 @fastapi_app.post("/api/server/{name}/files")
 async def upload_server_files(
