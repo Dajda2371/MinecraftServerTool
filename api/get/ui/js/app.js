@@ -1979,12 +1979,19 @@ function editRule(ruleJsonEscaped) {
     
     // Prevent modifying the internal port, protocol, or label for the primary server game port rule
     const isPrimaryPortRule = (rule.protocol === 'TCP' && rule.internal_port === firewallServerPort) || rule.label === 'Primary Game Port';
+    const isVoiceChatRule = rule.label && rule.label.toLowerCase() === 'simple voice chat';
     if (isPrimaryPortRule) {
         document.getElementById('rule-protocol').disabled = true;
         document.getElementById('rule-internal-port').disabled = true;
         document.getElementById('rule-external-port').disabled = false; // Modification of external port is allowed!
         document.getElementById('rule-label').disabled = true; // Description is locked to "Primary Game Port"
         showToast('Primary Game Port rule cannot have its internal port, protocol, or description modified.', 'info');
+    } else if (isVoiceChatRule) {
+        document.getElementById('rule-protocol').disabled = true;
+        document.getElementById('rule-internal-port').disabled = true; // Locked, loaded from properties!
+        document.getElementById('rule-external-port').disabled = true; // Locked/fixed for UDP voice chat
+        document.getElementById('rule-label').disabled = true; // Locked to "Simple Voice Chat"
+        showToast('Simple Voice Chat rule cannot have its ports, protocol, or description modified.', 'info');
     } else {
         if (rule.protocol === 'UDP') {
             document.getElementById('rule-external-port').disabled = true;

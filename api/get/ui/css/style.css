@@ -774,6 +774,15 @@ body::before {
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+.form-group input:disabled,
+.form-group select:disabled {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    color: var(--text-muted) !important;
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .form-group input::placeholder {
     color: var(--text-muted);
 }

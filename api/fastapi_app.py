@@ -1231,6 +1231,26 @@ async def get_server_firewall(name: str, current_user: str = Depends(get_current
             
     vc_info = api.voicechat.detect_voicechat(name)
     
+    # Ensure voicechat rule matches properties port if it exists
+    if vc_info["detected"] and vc_info["current_port"]:
+        vc_port = vc_info["current_port"]
+        vc_rule = None
+        for r in rules:
+            if r["protocol"] == "UDP" and r["label"].strip().lower() == "simple voice chat":
+                vc_rule = r
+                break
+        if vc_rule and vc_rule["internal_port"] != vc_port:
+            try:
+                api.db.update_firewall_rule(
+                    vc_rule["id"],
+                    vc_rule["enabled"],
+                    vc_port,
+                    "Simple Voice Chat"
+                )
+                rules = api.db.get_server_firewall_rules(name)
+            except Exception as e:
+                print(f"[Firewall Auto-Update VoiceChat Rule Error] {e}")
+            
     return {
         "rules": rules,
         "voicechat": vc_info,
@@ -1306,10 +1326,20 @@ async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate
     # Prevent changing internal port or protocol of the primary game port rule
     server_port = api.db.get_server_port_from_properties(name)
     is_primary = rule["label"] == "Primary Game Port" or (rule["protocol"] == "TCP" and rule["internal_port"] == server_port)
+    
+    # Prevent changing internal port or protocol of the Simple Voice Chat rule
+    is_voicechat = rule["protocol"] == "UDP" and rule["label"].strip().lower() == "simple voice chat"
+    
     if is_primary:
         if internal_port != server_port:
             raise HTTPException(status_code=400, detail="Cannot change the internal port of the primary game port rule.")
         label_to_save = "Primary Game Port"
+    elif is_voicechat:
+        vc = api.voicechat.detect_voicechat(name)
+        vc_port = vc["current_port"] if (vc["detected"] and vc["current_port"]) else 24454
+        if internal_port != vc_port:
+            raise HTTPException(status_code=400, detail="Cannot change the internal port of the Simple Voice Chat rule. It must be loaded from voicechat properties.")
+        label_to_save = "Simple Voice Chat"
     else:
         label_to_save = data.label.strip()
     
