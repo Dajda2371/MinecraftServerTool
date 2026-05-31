@@ -28,28 +28,25 @@ def register_log_callback(cb):
     log_callback = cb
 
 def log_message(server_name, text):
-    print(f"[{server_name}] {text}")
-    
-    # Write to log file
+    # Inside the container, just print raw text to stdout so the parent streams it.
+    # We do NOT write to /data/creation.log here to avoid double-write duplication.
     if os.path.exists("/data"):
-        log_path = "/data/creation.log"
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(text + "\n")
-        except Exception as e:
-            print(f"[Log Write Error] {e}")
-    else:
-        log_path = os.path.join("data", "servers", server_name, "creation.log")
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        try:
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(text + "\n")
-            # Read cumulative creation.log and write to volume
-            with open(log_path, "r", encoding="utf-8") as f:
-                full_content = f.read()
-            write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/creation.log", full_content)
-        except Exception as e:
-            print(f"[Volume Log Write Error] {e}")
+        print(text)
+        return
+
+    # Outside the container (CLI mode / local)
+    print(f"[{server_name}] {text}")
+    log_path = os.path.join("data", "servers", server_name, "creation.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+        # Read cumulative creation.log and write to volume
+        with open(log_path, "r", encoding="utf-8") as f:
+            full_content = f.read()
+        write_volume_file(SERVER_DATA_VOLUME, f"servers/{server_name}/creation.log", full_content)
+    except Exception as e:
+        print(f"[Volume Log Write Error] {e}")
 
     if log_callback:
         try:
