@@ -225,6 +225,24 @@ def get_server_status(server_name):
 
     container_name = info.get("container_name") or f"mc-{server_name}"
     
+    # 1. Check if the ephemeral mod downloader container is currently active
+    try:
+        client = docker.from_env()
+        downloader_name = f"mc-mod-downloader-{server_name}"
+        downloader = client.containers.get(downloader_name)
+        if downloader.status == "running":
+            return {
+                "name": server_name,
+                "container": container_name,
+                "status": "DOWNLOADING_MODS",
+                "port": info.get("port"),
+                "hostname": info.get("hostname"),
+            }
+    except docker.errors.NotFound:
+        pass
+    except Exception:
+        pass
+    
     if info.get("jar_path") in ("BUILDING...", "DOWNLOADING...", "INSTALLING..."):
         return {
             "name": server_name,

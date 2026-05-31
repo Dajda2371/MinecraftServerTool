@@ -198,7 +198,7 @@ function renderServers() {
         if (status === 'not running') status = 'stopped';
         
         const badgeClass = `badge-${status}`;
-        const statusLabel = status;
+        const statusLabel = status.replace('_', ' ');
         const hostname = srv.hostname || '—';
         const port = srv.port || '—';
         const version = srv.version || '—';
@@ -252,15 +252,24 @@ function renderServers() {
                     </div>
                 </div>
                 <div class="card-actions">
-                    ${status === 'creating'
+                    ${status === 'downloading_mods'
                         ? `<button class="btn btn-sm btn-ghost" onclick="showCreationLogs('${escapeAttr(srv.name)}')">
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                Logs
                            </button>
-                           <button class="btn btn-sm btn-danger" onclick="cancelServerCreation('${escapeAttr(srv.name)}')">
+                           <button class="btn btn-sm btn-danger" onclick="cancelModDownload('${escapeAttr(srv.name)}')">
                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                Cancel
                            </button>`
+                        : status === 'creating'
+                            ? `<button class="btn btn-sm btn-ghost" onclick="showCreationLogs('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                   Logs
+                               </button>
+                               <button class="btn btn-sm btn-danger" onclick="cancelServerCreation('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                   Cancel
+                               </button>`
                         : status === 'install_required'
                             ? `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="installServer('${escapeAttr(srv.name)}')">
                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -693,6 +702,21 @@ async function cancelServerCreation(name) {
     try {
         const data = await apiFetch('/api/server/delete', 'POST', { name, remove_data: true });
         showToast(data.message || `Creation cancelled.`, 'success');
+        await loadServers();
+    } catch (err) {
+        showToast(`Failed to cancel: ${err.message}`, 'error');
+    }
+}
+
+async function cancelModDownload(name) {
+    if (!confirm(`Are you sure you want to cancel the mod download for server '${name}'?`)) {
+        return;
+    }
+    
+    showToast(`Cancelling mod download for ${name}...`, 'info');
+    try {
+        const data = await apiFetch('/api/server/cancel-mod-download', 'POST', { name });
+        showToast(data.message || `Download cancelled.`, 'success');
         await loadServers();
     } catch (err) {
         showToast(`Failed to cancel: ${err.message}`, 'error');

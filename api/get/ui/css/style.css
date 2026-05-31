@@ -546,6 +546,11 @@ body::before {
     color: var(--accent);
 }
 
+.badge-downloading_mods {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+}
+
 .badge-dot {
     width: 6px;
     height: 6px;
@@ -553,7 +558,8 @@ body::before {
     background: currentColor;
 }
 
-.badge-running .badge-dot {
+.badge-running .badge-dot,
+.badge-downloading_mods .badge-dot {
     animation: pulse-green 2s infinite;
 }
 

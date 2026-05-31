@@ -514,6 +514,29 @@ async def delete_server(data: DeleteServerRequest, current_user: str = Depends(g
     await sio.emit("servers_updated", {})
     return {"message": result}
 
+@fastapi_app.post("/api/server/cancel-mod-download")
+async def cancel_mod_download(data: ServerNameRequest, current_user: str = Depends(get_current_user)):
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+        
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    import docker
+    client = docker.from_env()
+    container_name = f"mc-mod-downloader-{name}"
+    try:
+        container = client.containers.get(container_name)
+        container.stop(timeout=2)
+        container.remove()
+        await sio.emit("servers_updated", {})
+        return {"message": "Mod download cancelled and container stopped."}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="No active mod downloader found for this server.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel mod download: {str(e)}")
+
 @fastapi_app.post("/api/server/hostname")
 async def server_hostname(data: UpdateHostnameRequest, current_user: str = Depends(get_current_user)):
     name = data.name.strip()
