@@ -314,6 +314,20 @@ body::before {
     border-color: var(--border-hover);
 }
 
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border-hover);
+    color: var(--text-secondary);
+    transition: all var(--duration-fast) var(--ease);
+}
+
+.btn-outline:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--accent);
+    color: var(--text-primary);
+    box-shadow: 0 0 12px var(--accent-glow);
+}
+
 .btn-danger {
     background: var(--red);
     color: white;

@@ -1196,12 +1196,30 @@ async def get_server_firewall(name: str, current_user: str = Depends(get_current
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
+    server_info = api.db.get_server_info(name)
+    server_port = server_info.get("port") if server_info else 25565
+    
     rules = api.db.get_server_firewall_rules(name)
+    
+    # Ensure primary port rule exists
+    has_primary_rule = False
+    for r in rules:
+        if r["protocol"] == "TCP" and r["internal_port"] == server_port:
+            has_primary_rule = True
+            break
+    if not has_primary_rule:
+        try:
+            api.db.add_firewall_rule(name, "TCP", True, server_port, server_port, "Primary Game Port")
+            rules = api.db.get_server_firewall_rules(name)
+        except Exception as e:
+            print(f"[Firewall Auto-Create Primary Rule Error] {e}")
+            
     vc_info = api.voicechat.detect_voicechat(name)
     
     return {
         "rules": rules,
-        "voicechat": vc_info
+        "voicechat": vc_info,
+        "server_port": server_port
     }
 
 @fastapi_app.post("/api/server/{name}/firewall/rule")
@@ -1225,7 +1243,9 @@ async def create_firewall_rule(name: str, data: FirewallRuleCreate, current_user
             raise HTTPException(status_code=400, detail=str(err))
     else:
         external_port = data.external_port
-        if not external_port or not (1 <= external_port <= 65535):
+        if external_port is None:
+            external_port = internal_port
+        elif not (1 <= external_port <= 65535):
             raise HTTPException(status_code=400, detail="External port must be between 1 and 65535 for TCP rules")
             
     # Check collision
@@ -1270,7 +1290,9 @@ async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate
     
     if protocol == "TCP":
         external_port = data.external_port
-        if not external_port or not (1 <= external_port <= 65535):
+        if external_port is None:
+            external_port = internal_port
+        elif not (1 <= external_port <= 65535):
             raise HTTPException(status_code=400, detail="External port must be between 1 and 65535 for TCP rules")
         # Check collision
         if api.db.check_external_port_collision("TCP", external_port, exclude_id=rule_id):
@@ -1298,6 +1320,12 @@ async def delete_firewall_rule(name: str, rule_id: int, current_user: str = Depe
     rule = api.db.get_firewall_rule(rule_id)
     if not rule or rule["server_name"] != name:
         raise HTTPException(status_code=404, detail="Firewall rule not found for this server")
+        
+    # Prevent deleting primary server port rule
+    server_info = api.db.get_server_info(name)
+    server_port = server_info.get("port") if server_info else 25565
+    if rule["protocol"] == "TCP" and rule["internal_port"] == server_port:
+        raise HTTPException(status_code=400, detail="Cannot delete the primary game port rule.")
         
     api.db.delete_firewall_rule(rule_id)
     

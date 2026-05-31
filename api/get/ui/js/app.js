@@ -1790,6 +1790,7 @@ async function viewSpecificServerLog(name, path) {
 // Firewall & Voice Chat Integration Controller
 // ============================================================================
 let activeFirewallServer = null;
+let firewallServerPort = 25565;
 
 function triggerSettingsFirewall() {
     if (!activeSettingsServer) return;
@@ -1822,16 +1823,27 @@ function toggleAddRuleForm(show) {
         show = container.style.display === 'none';
     }
     
+    // Always enable inputs when toggled/reset
+    document.getElementById('rule-protocol').disabled = false;
+    document.getElementById('rule-internal-port').disabled = false;
+    document.getElementById('rule-external-port').disabled = false;
+    
     if (show) {
         container.style.display = 'block';
-        toggleBtn.textContent = 'Hide Form';
+        toggleBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <span>Hide Form</span>
+        `;
         document.getElementById('add-rule-form').reset();
         document.getElementById('edit-rule-id').value = '';
         document.getElementById('btn-save-rule').textContent = 'Add Rule';
         handleRuleProtocolChange();
     } else {
         container.style.display = 'none';
-        toggleBtn.textContent = 'Add Rule';
+        toggleBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>Add Rule</span>
+        `;
     }
 }
 
@@ -1841,16 +1853,17 @@ function handleRuleProtocolChange() {
     const externalLabel = document.getElementById('rule-external-label');
     const hint = document.getElementById('rule-external-hint');
     
+    // External port is optional for TCP (defaults to matching internal port) and auto-assigned for UDP
+    externalInput.required = false;
+    
     if (protocol === 'UDP') {
-        externalInput.required = false;
         externalInput.disabled = true;
         externalInput.value = '';
         externalInput.placeholder = 'Auto-assigned (23000-23999)';
         hint.style.display = 'block';
     } else {
-        externalInput.required = true;
         externalInput.disabled = false;
-        externalInput.placeholder = 'e.g. 8080';
+        externalInput.placeholder = 'e.g. 8080 (leave blank to match internal)';
         hint.style.display = 'none';
     }
 }
@@ -1859,6 +1872,7 @@ async function loadFirewallRules() {
     if (!activeFirewallServer) return;
     try {
         const data = await apiFetch(`/api/server/${activeFirewallServer}/firewall`);
+        firewallServerPort = data.server_port || 25565;
         renderFirewallRules(data.rules || []);
         renderVoiceChatAlert(data.voicechat, data.rules || []);
     } catch (err) {
@@ -1885,6 +1899,16 @@ function renderFirewallRules(rules) {
         // Escape whole rule object securely for inline onclick usage
         const ruleEscaped = escapeAttr(JSON.stringify(rule));
         
+        // Prevent deleting the primary server game port rule
+        const isPrimaryPortRule = rule.protocol === 'TCP' && rule.internal_port === firewallServerPort;
+        const deleteBtnHtml = isPrimaryPortRule
+            ? `<button class="btn btn-icon btn-sm" disabled style="opacity: 0.35; cursor: not-allowed;" title="Primary Game Port (Cannot delete)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+               </button>`
+            : `<button class="btn btn-icon btn-sm" onclick="deleteRule(${rule.id})" title="Delete Rule">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+               </button>`;
+        
         tr.innerHTML = `
             <td><span class="badge-proto ${protoBadge}">${rule.protocol}</span></td>
             <td><strong>${rule.internal_port}</strong></td>
@@ -1900,9 +1924,7 @@ function renderFirewallRules(rules) {
                 <button class="btn btn-icon btn-sm" onclick="editRule('${ruleEscaped}')" title="Edit Rule">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </button>
-                <button class="btn btn-icon btn-sm" onclick="deleteRule(${rule.id})" title="Delete Rule">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
+                ${deleteBtnHtml}
             </td>
         `;
         tbody.appendChild(tr);
@@ -1953,8 +1975,18 @@ function editRule(ruleJsonEscaped) {
     document.getElementById('btn-save-rule').textContent = 'Update Rule';
     
     handleRuleProtocolChange();
-    if (rule.protocol === 'UDP') {
+    
+    // Prevent modifying the ports or protocol for the primary server game port rule
+    const isPrimaryPortRule = rule.protocol === 'TCP' && rule.internal_port === firewallServerPort;
+    if (isPrimaryPortRule) {
+        document.getElementById('rule-protocol').disabled = true;
+        document.getElementById('rule-internal-port').disabled = true;
         document.getElementById('rule-external-port').disabled = true;
+        showToast('Primary Game Port rule cannot have its ports or protocol modified.', 'info');
+    } else {
+        if (rule.protocol === 'UDP') {
+            document.getElementById('rule-external-port').disabled = true;
+        }
     }
 }
 
@@ -1963,10 +1995,14 @@ async function saveFirewallRule(e) {
     if (!activeFirewallServer) return;
     
     const ruleId = document.getElementById('edit-rule-id').value;
+    // Protocol, internal_port and external_port might be disabled for primary rule edits,
+    // so read their values correctly even if disabled by directly accessing the value
     const protocol = document.getElementById('rule-protocol').value;
     const internal_port = parseInt(document.getElementById('rule-internal-port').value);
     const externalVal = document.getElementById('rule-external-port').value;
-    const external_port = externalVal ? parseInt(externalVal) : null;
+    
+    // Fall back to matching internal port if left blank for TCP
+    const external_port = externalVal ? parseInt(externalVal) : (protocol === 'TCP' ? internal_port : null);
     const label = document.getElementById('rule-label').value;
     
     const payload = {

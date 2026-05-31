@@ -478,8 +478,9 @@
                 <!-- Rules Header and Form Toggle -->
                 <div class="firewall-section-header">
                     <h4>Port Mapping Rules</h4>
-                    <button class="btn btn-outline btn-sm" id="btn-toggle-add-rule" onclick="toggleAddRuleForm()">
-                        Add Rule
+                    <button class="btn btn-outline btn-sm" id="btn-toggle-add-rule" onclick="toggleAddRuleForm()" style="display: inline-flex; align-items: center; gap: 4px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        <span>Add Rule</span>
                     </button>
                 </div>
 
@@ -489,25 +490,27 @@
                         <input type="hidden" id="edit-rule-id">
                         <div class="form-row">
                             <div class="form-group">
+                                <label for="rule-label">Label / Description</label>
+                                <input type="text" id="rule-label" placeholder="e.g. Dynmap interface, Simple Voice Chat" autocomplete="off">
+                            </div>
+                            <div class="form-group">
                                 <label for="rule-protocol">Protocol</label>
                                 <select id="rule-protocol" onchange="handleRuleProtocolChange()">
                                     <option value="TCP" selected>TCP</option>
                                     <option value="UDP">UDP</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="form-row">
                             <div class="form-group">
                                 <label for="rule-internal-port">Internal Port</label>
                                 <input type="number" id="rule-internal-port" placeholder="e.g. 8080" required min="1" max="65535">
                             </div>
                             <div class="form-group" id="rule-external-group">
                                 <label for="rule-external-port" id="rule-external-label">External Port</label>
-                                <input type="number" id="rule-external-port" placeholder="e.g. 8080" required min="1" max="65535">
+                                <input type="number" id="rule-external-port" placeholder="e.g. 8080 (leave blank to match internal)" min="1" max="65535">
                                 <span id="rule-external-hint" class="form-hint-inline" style="display: none; color: var(--text-muted); font-size: 0.725rem;">Allocated automatically (23000-23999)</span>
                             </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="rule-label">Label / Description</label>
-                            <input type="text" id="rule-label" placeholder="e.g. Dynmap interface, Simple Voice Chat" autocomplete="off">
                         </div>
                         <div class="form-actions" style="margin-top: var(--space-md); padding-bottom: 0;">
                             <button type="button" class="btn btn-ghost btn-sm" onclick="toggleAddRuleForm(false)">Cancel</button>
