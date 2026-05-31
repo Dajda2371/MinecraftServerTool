@@ -204,3 +204,123 @@ def sync_voicechat_properties_if_needed(server_name: str):
         voice_host = f"{hostname}:{external_port}" if hostname else f"<public-host>:{external_port}"
         
         write_or_update_voicechat_properties(config_path, internal_port, voice_host)
+
+
+def parse_voicechat_properties(server_name: str) -> dict:
+    """
+    Parses voicechat-server.properties for key properties (values and preceding descriptions).
+    """
+    detection = detect_voicechat(server_name)
+    if not detection["detected"] or not detection["config_path"]:
+        return {"detected": False}
+        
+    config_path = detection["config_path"]
+    
+    # Defaults in case keys don't exist
+    default_values = {
+        "port": "24454",
+        "max_voice_distance": "48.0",
+        "whisper_distance": "24.0",
+        "enable_groups": "true",
+        "allow_recording": "true",
+        "spectator_interaction": "false",
+        "spectator_player_possession": "false",
+        "broadcast_range": "-1.0"
+    }
+    
+    default_descriptions = {
+        "port": "The port number to use for the voice chat communication.",
+        "max_voice_distance": "The distance to which the voice can be heard",
+        "whisper_distance": "The distance to which the voice can be heard when whispering",
+        "enable_groups": "If group chats are allowed",
+        "allow_recording": "If players are allowed to record the voice chat audio",
+        "spectator_interaction": "If spectators are allowed to talk to other players",
+        "spectator_player_possession": "If spectators can talk to players they are spectating",
+        "broadcast_range": "The range in which the voice chat should broadcast audio"
+    }
+    
+    properties = {}
+    for k in default_values.keys():
+        properties[k] = {
+            "value": default_values[k],
+            "description": default_descriptions[k]
+        }
+        
+    if os.path.exists(config_path):
+        try:
+            comment_buffer = []
+            with open(config_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped:
+                        comment_buffer = []
+                        continue
+                    if stripped.startswith("#"):
+                        # Extract description line
+                        comment_buffer.append(stripped[1:].strip())
+                        continue
+                    if "=" in stripped:
+                        key, val = stripped.split("=", 1)
+                        key = key.strip()
+                        val = val.strip()
+                        if key in properties:
+                            properties[key]["value"] = val
+                            if comment_buffer:
+                                properties[key]["description"] = "\n".join(comment_buffer)
+                        comment_buffer = []
+        except Exception as e:
+            print(f"[VoiceChat Parser Error] {e}")
+            
+    return {
+        "detected": True,
+        "properties": properties
+    }
+
+
+def update_voicechat_properties_bulk(server_name: str, updates: dict):
+    """
+    Surgically updates multiple voicechat properties, keeping formatting/comments.
+    """
+    detection = detect_voicechat(server_name)
+    if not detection["detected"] or not detection["config_path"]:
+        raise ValueError("Simple Voice Chat not detected or config path not found")
+        
+    config_path = detection["config_path"]
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    
+    lines = []
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"[VoiceChat Bulk Write] Error reading: {e}")
+            
+    updated_keys = set()
+    new_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if "=" in stripped and not stripped.startswith("#"):
+            key, val = stripped.split("=", 1)
+            key = key.strip()
+            if key in updates:
+                suffix = "\n" if not line.endswith("\r\n") else "\r\n"
+                new_lines.append(f"{key}={updates[key]}{suffix}")
+                updated_keys.add(key)
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+            
+    # Append any key that wasn't already in the file
+    for key, val in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f"{key}={val}\n")
+            
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+    except Exception as e:
+        print(f"[VoiceChat Bulk Write] Error writing: {e}")
+        raise e

@@ -214,6 +214,7 @@ class FirewallRuleUpdate(BaseModel):
 
 class QuickSettingsRequest(BaseModel):
     server_port: int
+    voicechat: Optional[dict] = None
 
 # ============================================================================
 # Auth Endpoints
@@ -1468,8 +1469,13 @@ async def get_server_quick_settings(name: str, current_user: str = Depends(get_c
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_port = api.db.get_server_port_from_properties(name)
+    
+    # Check voicechat properties
+    vc_data = api.voicechat.parse_voicechat_properties(name)
+    
     return {
-        "server_port": server_port
+        "server_port": server_port,
+        "voicechat": vc_data
     }
 
 @fastapi_app.put("/api/server/{name}/quick-settings")
@@ -1482,7 +1488,7 @@ async def update_server_quick_settings(name: str, data: QuickSettingsRequest, cu
     if not (1 <= server_port <= 65535):
         raise HTTPException(status_code=400, detail="Server port must be between 1 and 65535")
         
-    # Write to server.properties
+    # 1. Write to server.properties
     try:
         import os
         server_local_path = os.path.abspath(os.path.join("data", "servers", name))
@@ -1551,6 +1557,41 @@ async def update_server_quick_settings(name: str, data: QuickSettingsRequest, cu
         except Exception as e:
             print(f"[QuickSettings] Error creating firewall rule in DB: {e}")
             
+    # 2. Write to voicechat-server.properties if provided
+    if data.voicechat:
+        updates = {}
+        for key in ("port", "max_voice_distance", "whisper_distance", "enable_groups", "allow_recording", "spectator_interaction", "spectator_player_possession", "broadcast_range"):
+            if key in data.voicechat:
+                val = data.voicechat[key]
+                if isinstance(val, bool):
+                    updates[key] = "true" if val else "false"
+                else:
+                    updates[key] = str(val)
+        if updates:
+            try:
+                api.voicechat.update_voicechat_properties_bulk(name, updates)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to update voicechat properties: {e}")
+                
+            # If voicechat port changed, sync database rule too immediately
+            if "port" in updates:
+                new_vc_port = int(updates["port"])
+                vc_rule = None
+                for r in rules:
+                    if r["protocol"] == "UDP" and r["label"].strip().lower() == "simple voice chat":
+                        vc_rule = r
+                        break
+                if vc_rule:
+                    try:
+                        api.db.update_firewall_rule(
+                            vc_rule["id"],
+                            vc_rule["enabled"],
+                            new_vc_port,
+                            "Simple Voice Chat"
+                        )
+                    except Exception as e:
+                        print(f"[QuickSettings VoiceChat Sync Error] {e}")
+                        
     return {"message": "Quick Settings updated successfully"}
 
 # ============================================================================

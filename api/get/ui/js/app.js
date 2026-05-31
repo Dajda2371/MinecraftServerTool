@@ -1721,12 +1721,76 @@ async function showQuickSettingsModal(name) {
     portInput.value = '';
     portInput.disabled = true;
     
+    const vcContainer = document.getElementById('quick-settings-voicechat-container');
+    vcContainer.style.display = 'none';
+    vcContainer.innerHTML = '';
+    
     try {
         const data = await apiFetch(`/api/server/${name}/quick-settings`);
         portInput.value = data.server_port || 25565;
         portInput.disabled = false;
+        
+        // Render Voice Chat Properties if detected
+        if (data.voicechat && data.voicechat.detected && data.voicechat.properties) {
+            vcContainer.style.display = 'block';
+            const props = data.voicechat.properties;
+            let html = `
+                <h4 style="border-bottom: 1px solid var(--border-default); padding-bottom: var(--space-xs); margin-bottom: var(--space-md); color: var(--accent); font-size: 0.95rem; font-weight: 600;">voicechat-server.properties</h4>
+                <div style="display: flex; flex-direction: column; gap: var(--space-md);">
+            `;
+            
+            const keys = ["port", "max_voice_distance", "whisper_distance", "enable_groups", "allow_recording", "spectator_interaction", "spectator_player_possession", "broadcast_range"];
+            
+            keys.forEach(key => {
+                if (!props[key]) return;
+                const prop = props[key];
+                const val = prop.value;
+                const desc = prop.description || '';
+                
+                // Format description cleanly
+                const descHtml = desc.split('\n').map(line => escapeHtml(line)).join('<br>');
+                const isBool = val === 'true' || val === 'false';
+                
+                if (isBool) {
+                    const isChecked = val === 'true';
+                    html += `
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: var(--space-xs); border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: var(--space-sm);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
+                                <label style="font-weight: 600; margin-bottom: 0;">${escapeHtml(key)}</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="qs-vc-${key}" ${isChecked ? 'checked' : ''}>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <span class="form-hint" style="color: var(--text-muted); font-size: 0.725rem; margin-top: 2px; line-height: 1.4;">
+                                ${descHtml}
+                            </span>
+                        </div>
+                    `;
+                } else {
+                    const isInt = key === 'port';
+                    const inputType = (isInt || key.includes('distance') || key.includes('range')) ? 'number' : 'text';
+                    const stepAttr = key.includes('distance') || key.includes('range') ? 'step="0.1"' : '';
+                    
+                    html += `
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: var(--space-xs); border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: var(--space-sm);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
+                                <label for="qs-vc-${key}" style="font-weight: 600; margin-bottom: 0;">${escapeHtml(key)}</label>
+                                <input type="${inputType}" id="qs-vc-${key}" value="${escapeHtml(val)}" required ${stepAttr} style="width: 120px; text-align: right; font-weight: 600;">
+                            </div>
+                            <span class="form-hint" style="color: var(--text-muted); font-size: 0.725rem; margin-top: 2px; line-height: 1.4;">
+                                ${descHtml}
+                            </span>
+                        </div>
+                    `;
+                }
+            });
+            
+            html += `</div>`;
+            vcContainer.innerHTML = html;
+        }
     } catch (err) {
-        showToast(`Failed to load server.properties: ${err}`, 'error');
+        showToast(`Failed to load Quick Settings: ${err}`, 'error');
         hideQuickSettingsModal();
     }
 }
@@ -1749,14 +1813,38 @@ async function saveQuickSettings(e) {
         return;
     }
     
+    // Gather Voice Chat settings if container is visible
+    let voicechatPayload = null;
+    const vcContainer = document.getElementById('quick-settings-voicechat-container');
+    if (vcContainer.style.display === 'block') {
+        voicechatPayload = {};
+        const keys = ["port", "max_voice_distance", "whisper_distance", "enable_groups", "allow_recording", "spectator_interaction", "spectator_player_possession", "broadcast_range"];
+        keys.forEach(key => {
+            const el = document.getElementById(`qs-vc-${key}`);
+            if (el) {
+                if (el.type === 'checkbox') {
+                    voicechatPayload[key] = el.checked;
+                } else if (el.type === 'number') {
+                    voicechatPayload[key] = parseFloat(el.value);
+                } else {
+                    voicechatPayload[key] = el.value;
+                }
+            }
+        });
+    }
+    
     const saveBtn = document.getElementById('btn-save-quick-settings');
     const originalText = saveBtn.textContent;
     saveBtn.textContent = 'Saving...';
     saveBtn.disabled = true;
     
     try {
-        await apiFetch(`/api/server/${activeQuickSettingsServer}/quick-settings`, 'PUT', { server_port });
-        showToast('Server properties updated successfully!', 'success');
+        const payload = {
+            server_port,
+            voicechat: voicechatPayload
+        };
+        await apiFetch(`/api/server/${activeQuickSettingsServer}/quick-settings`, 'PUT', payload);
+        showToast('Quick Settings updated successfully!', 'success');
         hideQuickSettingsModal();
         
         // Refresh server lists
@@ -1764,7 +1852,7 @@ async function saveQuickSettings(e) {
             loadServers();
         }
     } catch (err) {
-        showToast(`Failed to save server properties: ${err}`, 'error');
+        showToast(`Failed to save Quick Settings: ${err}`, 'error');
     } finally {
         saveBtn.textContent = originalText;
         saveBtn.disabled = false;
