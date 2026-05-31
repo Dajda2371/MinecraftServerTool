@@ -603,3 +603,44 @@ def delete_firewall_rule(rule_id: int) -> bool:
     conn.commit()
     conn.close()
     return deleted
+
+
+def get_server_port_from_properties(server_name: str) -> int:
+    """
+    Read the server-port property from the server's properties file,
+    updating the DB 'servers' table 'port' column to keep it in sync,
+    and defaulting to the database value or 25565.
+    """
+    import os
+    server_local_path = os.path.abspath(os.path.join("data", "servers", server_name))
+    props_path = os.path.join(server_local_path, "server.properties")
+    port = None
+    if os.path.exists(props_path):
+        try:
+            with open(props_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "=" in line and not line.startswith("#"):
+                        key, value = line.split("=", 1)
+                        if key.strip() == "server-port":
+                            port = int(value.strip())
+                            break
+        except Exception as e:
+            print(f"[get_server_port_from_properties Error] {e}")
+
+    conn = _connect()
+    cursor = conn.cursor()
+    
+    # Fallback if not found in properties file
+    if port is None:
+        cursor.execute("SELECT port FROM servers WHERE name = %s", (server_name,))
+        row = cursor.fetchone()
+        port = row[0] if (row and row[0]) else 25565
+    else:
+        # Keep the DB in sync with properties file
+        cursor.execute("UPDATE servers SET port = %s WHERE name = %s AND port != %s", (port, server_name, port))
+        conn.commit()
+        
+    conn.close()
+    return port
+

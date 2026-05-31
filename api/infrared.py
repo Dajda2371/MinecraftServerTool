@@ -18,7 +18,7 @@ Layout inside the mounted volume (./data/infrared → /etc/infrared):
 import os
 import docker
 
-from api.db import get_all_servers
+from api.db import get_all_servers, get_server_port_from_properties
 
 # Paths (relative to project root when running inside management container)
 INFRARED_DIR = os.path.abspath("data/infrared")
@@ -87,7 +87,7 @@ def generate_proxy_files():
     for srv in servers:
         name = srv["name"]
         container_name = srv.get("container_name") or f"mc-{name}"
-        port = srv.get("port") or 25565
+        port = get_server_port_from_properties(name)
         hostname = srv.get("hostname")
 
         if not hostname:

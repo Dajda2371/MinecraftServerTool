@@ -11,7 +11,7 @@ Key properties:
 import os
 import docker
 
-from api.db import get_server_info, update_server_info, get_server_firewall_rules
+from api.db import get_server_info, update_server_info, get_server_firewall_rules, get_server_port_from_properties
 from api.voicechat import sync_voicechat_properties_if_needed
 from api.infrared import reload_proxy_config
 from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME, get_compose_labels
@@ -105,7 +105,7 @@ def run_server(server_name):
     server_local_path = os.path.abspath(f"data/servers/{server_name}")
 
     container_name = info.get("container_name") or f"mc-{server_name}"
-    port = info.get("port") or 25565
+    port = get_server_port_from_properties(server_name)
     memory_mb = info.get("memory_mb") or 1024
 
     # Configure server.properties (online-mode=true, correct port)

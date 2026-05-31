@@ -1827,6 +1827,7 @@ function toggleAddRuleForm(show) {
     document.getElementById('rule-protocol').disabled = false;
     document.getElementById('rule-internal-port').disabled = false;
     document.getElementById('rule-external-port').disabled = false;
+    document.getElementById('rule-label').disabled = false;
     
     if (show) {
         container.style.display = 'block';
@@ -1900,7 +1901,7 @@ function renderFirewallRules(rules) {
         const ruleEscaped = escapeAttr(JSON.stringify(rule));
         
         // Prevent deleting the primary server game port rule
-        const isPrimaryPortRule = rule.protocol === 'TCP' && rule.internal_port === firewallServerPort;
+        const isPrimaryPortRule = (rule.protocol === 'TCP' && rule.internal_port === firewallServerPort) || rule.label === 'Primary Game Port';
         const deleteBtnHtml = isPrimaryPortRule
             ? `<button class="btn btn-icon btn-sm" disabled style="opacity: 0.35; cursor: not-allowed;" title="Primary Game Port (Cannot delete)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
@@ -1976,13 +1977,14 @@ function editRule(ruleJsonEscaped) {
     
     handleRuleProtocolChange();
     
-    // Prevent modifying the ports or protocol for the primary server game port rule
-    const isPrimaryPortRule = rule.protocol === 'TCP' && rule.internal_port === firewallServerPort;
+    // Prevent modifying the internal port, protocol, or label for the primary server game port rule
+    const isPrimaryPortRule = (rule.protocol === 'TCP' && rule.internal_port === firewallServerPort) || rule.label === 'Primary Game Port';
     if (isPrimaryPortRule) {
         document.getElementById('rule-protocol').disabled = true;
         document.getElementById('rule-internal-port').disabled = true;
-        document.getElementById('rule-external-port').disabled = true;
-        showToast('Primary Game Port rule cannot have its ports or protocol modified.', 'info');
+        document.getElementById('rule-external-port').disabled = false; // Modification of external port is allowed!
+        document.getElementById('rule-label').disabled = true; // Description is locked to "Primary Game Port"
+        showToast('Primary Game Port rule cannot have its internal port, protocol, or description modified.', 'info');
     } else {
         if (rule.protocol === 'UDP') {
             document.getElementById('rule-external-port').disabled = true;

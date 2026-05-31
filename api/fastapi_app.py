@@ -1196,18 +1196,33 @@ async def get_server_firewall(name: str, current_user: str = Depends(get_current
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
-    server_info = api.db.get_server_info(name)
-    server_port = server_info.get("port") if server_info else 25565
-    
+    server_port = api.db.get_server_port_from_properties(name)
     rules = api.db.get_server_firewall_rules(name)
     
-    # Ensure primary port rule exists
-    has_primary_rule = False
+    # Ensure primary port rule exists and matches server_port
+    primary_rule = None
     for r in rules:
-        if r["protocol"] == "TCP" and r["internal_port"] == server_port:
-            has_primary_rule = True
+        if r["label"] == "Primary Game Port":
+            primary_rule = r
             break
-    if not has_primary_rule:
+            
+    if primary_rule:
+        if primary_rule["internal_port"] != server_port:
+            new_external = primary_rule["external_port"]
+            if primary_rule["external_port"] == primary_rule["internal_port"]:
+                new_external = server_port
+            try:
+                api.db.update_firewall_rule(
+                    primary_rule["id"],
+                    primary_rule["enabled"],
+                    server_port,
+                    "Primary Game Port",
+                    new_external
+                )
+                rules = api.db.get_server_firewall_rules(name)
+            except Exception as e:
+                print(f"[Firewall Auto-Update Primary Rule Error] {e}")
+    else:
         try:
             api.db.add_firewall_rule(name, "TCP", True, server_port, server_port, "Primary Game Port")
             rules = api.db.get_server_firewall_rules(name)
@@ -1288,6 +1303,16 @@ async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate
         
     protocol = rule["protocol"]
     
+    # Prevent changing internal port or protocol of the primary game port rule
+    server_port = api.db.get_server_port_from_properties(name)
+    is_primary = rule["label"] == "Primary Game Port" or (rule["protocol"] == "TCP" and rule["internal_port"] == server_port)
+    if is_primary:
+        if internal_port != server_port:
+            raise HTTPException(status_code=400, detail="Cannot change the internal port of the primary game port rule.")
+        label_to_save = "Primary Game Port"
+    else:
+        label_to_save = data.label.strip()
+    
     if protocol == "TCP":
         external_port = data.external_port
         if external_port is None:
@@ -1298,10 +1323,10 @@ async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate
         if api.db.check_external_port_collision("TCP", external_port, exclude_id=rule_id):
             raise HTTPException(status_code=400, detail=f"Port collision: external port {external_port} (TCP) is already mapped")
             
-        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, data.label.strip(), external_port)
+        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, label_to_save, external_port)
     else:
         # For UDP, external port is FIXED
-        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, data.label.strip())
+        api.db.update_firewall_rule(rule_id, data.enabled, internal_port, label_to_save)
         
     # Sync voicechat properties file immediately
     try:
@@ -1322,9 +1347,9 @@ async def delete_firewall_rule(name: str, rule_id: int, current_user: str = Depe
         raise HTTPException(status_code=404, detail="Firewall rule not found for this server")
         
     # Prevent deleting primary server port rule
-    server_info = api.db.get_server_info(name)
-    server_port = server_info.get("port") if server_info else 25565
-    if rule["protocol"] == "TCP" and rule["internal_port"] == server_port:
+    server_port = api.db.get_server_port_from_properties(name)
+    is_primary = rule["label"] == "Primary Game Port" or (rule["protocol"] == "TCP" and rule["internal_port"] == server_port)
+    if is_primary:
         raise HTTPException(status_code=400, detail="Cannot delete the primary game port rule.")
         
     api.db.delete_firewall_rule(rule_id)
