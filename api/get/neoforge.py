@@ -35,15 +35,19 @@ def get_mc_version_from_neoforge_version(neoforge_version):
             return f"1.{spl[0]}.{spl[1]}"
         return f"1.{spl[0]}"
 
-def normalize_mc_version(mc_version):
-    # Normalize 1.x.0 to 1.x for the old naming convention
-    # e.g., "1.20.0" -> "1.20"
+def get_neoforge_versions(mc_version):
+    mc_version = mc_version.strip()
+    
+    # If the user requested a 1.x.0 version, explicitly return no versions
+    # as it is not a valid Minecraft version (the valid one is 1.x).
     parts = mc_version.split('.')
     if len(parts) == 3 and parts[0] == "1" and parts[2] == "0":
-        return f"1.{parts[1]}"
-    return mc_version
+        return {
+            "recommended": None,
+            "latest": None,
+            "versions": []
+        }
 
-def get_neoforge_versions(mc_version):
     # 1. Fetch neoforged.net to verify and locate section_block
     try:
         headers = {
@@ -78,16 +82,12 @@ def get_neoforge_versions(mc_version):
             except Exception as fe:
                 print(f"[NeoForge] Fallback failed for {gav}: {fe}")
 
-    # Normalize mc_version input
-    normalized_mc = normalize_mc_version(mc_version.strip())
-    
-    # If the normalized version is of the old "1.x" format, we match it against parsed "1.x.0"
+    # If the version is of the old "1.x" format, we match it against parsed "1.x.0"
     # e.g., normalized "1.20" matches parsed "1.20.0"
-    parts = normalized_mc.split('.')
     if len(parts) == 2 and parts[0] == "1":
-        target_mc = f"{normalized_mc}.0"
+        target_mc = f"{mc_version}.0"
     else:
-        target_mc = normalized_mc
+        target_mc = mc_version
 
     # Filter versions that match the requested target_mc
     matching_versions = []
@@ -142,17 +142,21 @@ def get_neoforge_versions(mc_version):
 if __name__ == "__main__":
     import json
     try:
-        # Test 1.20 (should fetch 1.20.0)
+        # Test 1.20 (should fetch 1.20.0 versions)
         res = get_neoforge_versions("1.20")
         print("1.20 Recommended:", res["recommended"]["version"] if res["recommended"] else None)
 
-        # Test 1.20.0 (should normalize to 1.20 and match 1.20.0)
+        # Test 1.20.0 (should explicitly return None / no versions)
         res_zero = get_neoforge_versions("1.20.0")
         print("1.20.0 Recommended:", res_zero["recommended"]["version"] if res_zero["recommended"] else None)
 
-        # Test 1.20.1
-        res_one = get_neoforge_versions("1.20.1")
-        print("1.20.1 Recommended:", res_one["recommended"]["version"] if res_one["recommended"] else None)
+        # Test 1.21 (should fetch 1.21.0 versions)
+        res_twentyone = get_neoforge_versions("1.21")
+        print("1.21 Recommended:", res_twentyone["recommended"]["version"] if res_twentyone["recommended"] else None)
+
+        # Test 1.21.0 (should explicitly return None / no versions)
+        res_twentyone_zero = get_neoforge_versions("1.21.0")
+        print("1.21.0 Recommended:", res_twentyone_zero["recommended"]["version"] if res_twentyone_zero["recommended"] else None)
         
         # Test 1.21.1
         res2 = get_neoforge_versions("1.21.1")
