@@ -1945,9 +1945,21 @@ input:checked + .toggle-slider:before {
     margin-top: 0;
 }
 
-.modal--medium.quick-settings-modal {
-    max-width: 650px;
-    width: 90vw;
+.modal--large.quick-settings-modal {
+    max-width: 1200px;
+    width: 95vw;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-xl);
+}
+
+.quick-settings-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: var(--space-md);
+    margin-bottom: 0;
+    min-height: 0;
 }
 
 
