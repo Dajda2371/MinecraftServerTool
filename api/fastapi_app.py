@@ -6,7 +6,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 
 import socketio
-from fastapi import FastAPI, Depends, HTTPException, Cookie, Response, Request, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Cookie, Response, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -470,6 +470,119 @@ async def upload_modlist(name: str, file: UploadFile = File(...), current_user: 
         return {"message": "CurseForge mod list parsed. Downloading mods in background..."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse mod list: {str(e)}")
+
+# ============================================================================
+# File Explorer Endpoints
+# ============================================================================
+@fastapi_app.get("/api/server/{name}/files")
+async def list_server_files(name: str, path: str = "", current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    server_dir = os.path.abspath(f"data/servers/{name}")
+    if not os.path.exists(server_dir):
+        raise HTTPException(status_code=404, detail="Server folder not found")
+        
+    # Security check: resolve target path and verify it lies within server_dir
+    target_dir = os.path.abspath(os.path.join(server_dir, path.strip("/")))
+    if not target_dir.startswith(server_dir):
+        raise HTTPException(status_code=400, detail="Invalid path traversal attempt")
+        
+    if not os.path.exists(target_dir):
+        return {"files": [], "current_path": path}
+        
+    files_list = []
+    try:
+        for item in os.listdir(target_dir):
+            # Ignore hidden files
+            if item.startswith('.'):
+                continue
+            item_path = os.path.join(target_dir, item)
+            rel_path = os.path.relpath(item_path, server_dir)
+            is_dir = os.path.isdir(item_path)
+            size = os.path.getsize(item_path) if not is_dir else 0
+            files_list.append({
+                "name": item,
+                "path": rel_path,
+                "is_dir": is_dir,
+                "size": size
+            })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list directory: {str(e)}")
+        
+    # Sort: directories first, then files, both alphabetically
+    files_list.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+    return {"files": files_list, "current_path": path}
+
+@fastapi_app.get("/api/server/{name}/file")
+async def get_server_file(name: str, path: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    server_dir = os.path.abspath(f"data/servers/{name}")
+    target_file = os.path.abspath(os.path.join(server_dir, path.strip("/")))
+    if not target_file.startswith(server_dir) or not os.path.isfile(target_file):
+        raise HTTPException(status_code=400, detail="Invalid or missing file path")
+        
+    try:
+        # Check if text file by trying to read it
+        with open(target_file, "rb") as f:
+            raw_content = f.read()
+        try:
+            content = raw_content.decode("utf-8")
+            is_binary = False
+        except UnicodeDecodeError:
+            content = "[Binary File - Preview and edits not supported in Web UI]"
+            is_binary = True
+            
+        return {"content": content, "is_binary": is_binary, "path": path, "size": len(raw_content)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
+
+@fastapi_app.post("/api/server/{name}/files")
+async def upload_server_files(
+    name: str,
+    paths_json: str = Form(...),
+    files: list[UploadFile] = File(...),
+    current_user: str = Depends(get_current_user)
+):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    import json
+    try:
+        paths = json.loads(paths_json)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid paths format. Must be JSON array.")
+        
+    if len(paths) != len(files):
+        raise HTTPException(status_code=400, detail="Paths and files lists length mismatch")
+        
+    server_dir = os.path.abspath(f"data/servers/{name}")
+    if not os.path.exists(server_dir):
+        raise HTTPException(status_code=404, detail="Server folder not found")
+        
+    saved_count = 0
+    try:
+        for rel_path, file in zip(paths, files):
+            target_file = os.path.abspath(os.path.join(server_dir, rel_path.strip("/")))
+            if not target_file.startswith(server_dir):
+                print(f"[Security Alert] File upload path '{rel_path}' escaped server root.")
+                continue
+                
+            os.makedirs(os.path.dirname(target_file), exist_ok=True)
+            
+            content = await file.read()
+            with open(target_file, "wb") as f:
+                f.write(content)
+            saved_count += 1
+            
+        return {"message": f"Successfully uploaded/saved {saved_count} file(s)."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save files: {str(e)}")
 
 @fastapi_app.post("/api/server/agree-eula")
 async def agree_eula(data: ServerNameRequest, current_user: str = Depends(get_current_user)):

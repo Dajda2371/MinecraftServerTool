@@ -8,6 +8,10 @@ let deleteTargetName = null;
 let currentUser = null;
 let activeLogServer = null;
 let activeConsoleServer = null;
+let activeExplorerServer = null;
+let currentExplorerPath = "";
+let explorerChanges = {};
+let editorOriginalPath = null;
 
 // --- Socket.IO Real-Time Client ---
 const socket = io();
@@ -300,6 +304,10 @@ function renderServers() {
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
                                        Console
                                    </button>
+                                   <button class="btn btn-sm btn-ghost" onclick="showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                       Files
+                                   </button>
                                    <button class="btn btn-sm btn-warning" onclick="stopServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                                        Stop
@@ -314,6 +322,10 @@ function renderServers() {
                                 : `<button class="btn btn-sm btn-success" onclick="startServer('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                        Start
+                                   </button>
+                                   <button class="btn btn-sm btn-ghost" onclick="showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                       Files
                                    </button>
                                    <button class="btn btn-sm btn-ghost" onclick="showDeleteModal('${escapeAttr(srv.name)}')">
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1198,4 +1210,471 @@ function submitModUpload() {
     };
     
     xhr.send(formData);
+}
+
+
+// ============================================================================
+// File Explorer & Git-like Staging Actions
+// ============================================================================
+
+async function showFileExplorerModal(name) {
+    activeExplorerServer = name;
+    currentExplorerPath = "";
+    explorerChanges = {};
+    editorOriginalPath = null;
+    
+    document.getElementById('explorer-server-name').textContent = name;
+    document.getElementById('file-explorer-modal-overlay').classList.add('is-visible');
+    
+    setupExplorerDragAndDrop();
+    await loadExplorerDirectory("");
+    renderExplorerChanges();
+}
+
+function hideFileExplorerModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('file-explorer-modal-overlay').classList.remove('is-visible');
+    activeExplorerServer = null;
+}
+
+async function loadExplorerDirectory(path) {
+    currentExplorerPath = path;
+    
+    // Set breadcrumbs
+    const crumbs = document.getElementById('explorer-breadcrumbs');
+    crumbs.textContent = path ? `/${path}` : "/";
+    
+    try {
+        const data = await apiFetch(`/api/server/${activeExplorerServer}/files?path=${encodeURIComponent(path)}`);
+        renderExplorerFiles(data.files || []);
+    } catch (err) {
+        showToast(`Failed to load directory: ${err.message}`, 'error');
+    }
+}
+
+function renderExplorerFiles(files) {
+    const listContainer = document.getElementById('explorer-file-list-container');
+    listContainer.innerHTML = '';
+    
+    if (files.length === 0) {
+        listContainer.innerHTML = `
+            <div style="padding: var(--space-2xl); text-align: center; color: var(--text-muted); font-size: 0.875rem;">
+                This directory is empty
+            </div>
+        `;
+        return;
+    }
+    
+    files.forEach(file => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'explorer-item';
+        
+        // Icon based on type
+        let iconHtml = '';
+        if (file.is_dir) {
+            iconHtml = `
+                <div class="explorer-item-icon folder">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                </div>
+            `;
+        } else {
+            iconHtml = `
+                <div class="explorer-item-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                </div>
+            `;
+        }
+        
+        // Size format
+        const sizeText = file.is_dir ? '—' : formatBytes(file.size);
+        
+        itemEl.innerHTML = `
+            ${iconHtml}
+            <span class="explorer-item-name">${escapeHtml(file.name)}</span>
+            <div class="explorer-item-details">
+                <span>${sizeText}</span>
+            </div>
+        `;
+        
+        // Click action: enter dir or edit/view file
+        itemEl.onclick = async () => {
+            if (file.is_dir) {
+                await loadExplorerDirectory(file.path);
+            } else {
+                await editFileInExplorer(file.path);
+            }
+        };
+        
+        listContainer.appendChild(itemEl);
+    });
+}
+
+function navigateExplorerUp() {
+    if (!currentExplorerPath) return;
+    const parts = currentExplorerPath.split('/');
+    parts.pop();
+    loadExplorerDirectory(parts.join('/'));
+}
+
+async function editFileInExplorer(path) {
+    try {
+        showToast(`Loading file...`, 'info');
+        const data = await apiFetch(`/api/server/${activeExplorerServer}/file?path=${encodeURIComponent(path)}`);
+        
+        if (data.is_binary) {
+            showToast(`Binary file. Edits not supported in Web UI.`, 'warning');
+            return;
+        }
+        
+        editorOriginalPath = path;
+        document.getElementById('editor-filename-label').textContent = `Editing: ${path}`;
+        
+        // Pre-fill content (or load from explorerChanges if already edited but unstaged)
+        const currentChange = explorerChanges[path];
+        const initialText = currentChange ? currentChange.content : data.content;
+        
+        document.getElementById('explorer-editor-textarea').value = initialText;
+        
+        // Swap views
+        document.getElementById('explorer-browser-view').style.display = 'none';
+        document.getElementById('explorer-editor-view').style.display = 'flex';
+        
+        // Auto-focus editor
+        setTimeout(() => {
+            document.getElementById('explorer-editor-textarea').focus();
+        }, 100);
+        
+    } catch (err) {
+        showToast(`Failed to load file: ${err.message}`, 'error');
+    }
+}
+
+function closeExplorerEditor() {
+    document.getElementById('explorer-editor-view').style.display = 'none';
+    document.getElementById('explorer-browser-view').style.display = 'flex';
+    editorOriginalPath = null;
+}
+
+function saveExplorerEditor() {
+    if (!editorOriginalPath) return;
+    
+    const newContent = document.getElementById('explorer-editor-textarea').value;
+    
+    // Add to unstaged changes
+    explorerChanges[editorOriginalPath] = {
+        path: editorOriginalPath,
+        type: 'edit',
+        content: newContent,
+        staged: false
+    };
+    
+    showToast(`Kept edits in unstaged changes list.`, 'success');
+    closeExplorerEditor();
+    renderExplorerChanges();
+}
+
+function promptCreateFile() {
+    const filename = prompt("Enter new file name (e.g. motd.txt):");
+    if (!filename) return;
+    
+    const cleanFilename = filename.trim();
+    if (!cleanFilename) return;
+    
+    const path = currentExplorerPath ? `${currentExplorerPath}/${cleanFilename}` : cleanFilename;
+    
+    // Store as new file change
+    explorerChanges[path] = {
+        path: path,
+        type: 'new',
+        content: '',
+        staged: false
+    };
+    
+    renderExplorerChanges();
+    
+    // Open in editor directly so they can write!
+    editFileInExplorer(path);
+}
+
+function promptCreateFolder() {
+    const foldername = prompt("Enter new folder name (e.g. backup):");
+    if (!foldername) return;
+    
+    const cleanFoldername = foldername.trim();
+    if (!cleanFoldername) return;
+    
+    const path = currentExplorerPath ? `${currentExplorerPath}/${cleanFoldername}` : cleanFoldername;
+    
+    // A folder doesn't have file content, but to write/commit a folder on the server
+    // we can create a placeholder `.keep` file so the folder gets created!
+    const keepFilePath = `${path}/.keep`;
+    explorerChanges[keepFilePath] = {
+        path: keepFilePath,
+        type: 'new',
+        content: '# Placeholder to preserve directory structure',
+        staged: false
+    };
+    
+    renderExplorerChanges();
+    showToast(`Prepared folder creation in unstaged changes.`, 'success');
+}
+
+function triggerLocalFileSelect() {
+    document.getElementById('explorer-file-input').click();
+}
+
+function handleLocalFileSelect(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    Array.from(files).forEach(file => {
+        const path = currentExplorerPath ? `${currentExplorerPath}/${file.name}` : file.name;
+        explorerChanges[path] = {
+            path: path,
+            type: 'new',
+            content: file, // Keep the native File object!
+            staged: false
+        };
+    });
+    
+    renderExplorerChanges();
+    showToast(`Prepared ${files.length} file(s) in unstaged changes.`, 'success');
+    
+    // Reset file input
+    e.target.value = '';
+}
+
+// Staging Control Actions
+function toggleStageChange(path) {
+    if (explorerChanges[path]) {
+        explorerChanges[path].staged = !explorerChanges[path].staged;
+        renderExplorerChanges();
+    }
+}
+
+function discardChange(path) {
+    if (explorerChanges[path]) {
+        if (confirm(`Are you sure you want to discard the pending changes for ${path}?`)) {
+            delete explorerChanges[path];
+            renderExplorerChanges();
+            showToast(`Discarded change.`, 'info');
+        }
+    }
+}
+
+function renderExplorerChanges() {
+    const unstagedList = document.getElementById('unstaged-changes-list');
+    const stagedList = document.getElementById('staged-changes-list');
+    
+    unstagedList.innerHTML = '';
+    stagedList.innerHTML = '';
+    
+    const changesArray = Object.values(explorerChanges);
+    const unstagedItems = changesArray.filter(c => !c.staged);
+    const stagedItems = changesArray.filter(c => c.staged);
+    
+    document.getElementById('count-unstaged').textContent = unstagedItems.length;
+    document.getElementById('count-staged').textContent = stagedItems.length;
+    
+    // Render Unstaged
+    if (unstagedItems.length === 0) {
+        unstagedList.innerHTML = `
+            <div style="padding: var(--space-md); text-align: center; color: var(--text-muted); font-size: 0.75rem;">
+                No unstaged changes
+            </div>
+        `;
+    } else {
+        unstagedItems.forEach(c => {
+            const el = document.createElement('div');
+            el.className = 'change-item';
+            
+            const tagClass = c.type === 'new' ? 'tag-new' : 'tag-edit';
+            const tagLabel = c.type === 'new' ? 'NEW' : 'MOD';
+            
+            el.innerHTML = `
+                <span class="change-tag ${tagClass}">${tagLabel}</span>
+                <span class="change-item-path" title="${escapeHtml(c.path)}">${escapeHtml(c.path)}</span>
+                <div class="change-item-actions">
+                    <button class="btn btn-icon btn-sm" onclick="toggleStageChange('${escapeAttr(c.path)}')" title="Stage Change">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <button class="btn btn-icon btn-sm" onclick="discardChange('${escapeAttr(c.path)}')" title="Discard Edits">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2.5 2v6h6M21.5 22v-6h-6"/><path d="M22 11.5A10 10 0 0 0 12.3 2.5a10.16 10.16 0 0 0-8.5 4.5L2.5 8m19 8-1.3 1A10.16 10.16 0 0 1 11.7 21.5a10 10 0 0 1-9.2-9"/></svg>
+                    </button>
+                </div>
+            `;
+            unstagedList.appendChild(el);
+        });
+    }
+    
+    // Render Staged
+    if (stagedItems.length === 0) {
+        stagedList.innerHTML = `
+            <div style="padding: var(--space-md); text-align: center; color: var(--text-muted); font-size: 0.75rem;">
+                No staged changes
+            </div>
+        `;
+    } else {
+        stagedItems.forEach(c => {
+            const el = document.createElement('div');
+            el.className = 'change-item';
+            
+            const tagClass = c.type === 'new' ? 'tag-new' : 'tag-edit';
+            const tagLabel = c.type === 'new' ? 'NEW' : 'MOD';
+            
+            el.innerHTML = `
+                <span class="change-tag ${tagClass}">${tagLabel}</span>
+                <span class="change-item-path" title="${escapeHtml(c.path)}">${escapeHtml(c.path)}</span>
+                <div class="change-item-actions">
+                    <button class="btn btn-icon btn-sm" onclick="toggleStageChange('${escapeAttr(c.path)}')" title="Unstage Change">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                </div>
+            `;
+            stagedList.appendChild(el);
+        });
+    }
+    
+    // Button Label logic: "upload the staged chnges and if none are staged upload all changes"
+    const btn = document.getElementById('btn-explorer-upload');
+    const btnText = document.getElementById('btn-upload-text');
+    
+    if (changesArray.length === 0) {
+        btn.disabled = true;
+        btnText.textContent = "Upload Changes";
+    } else {
+        btn.disabled = false;
+        if (stagedItems.length > 0) {
+            btnText.textContent = `Upload Staged (${stagedItems.length})`;
+        } else {
+            btnText.textContent = `Upload All (${unstagedItems.length})`;
+        }
+    }
+}
+
+// Bulk Upload to Server
+async function uploadChangesToServer() {
+    const changesArray = Object.values(explorerChanges);
+    if (changesArray.length === 0) return;
+    
+    const stagedItems = changesArray.filter(c => c.staged);
+    const unstagedItems = changesArray.filter(c => !c.staged);
+    
+    // Determine target changes to send
+    const targets = stagedItems.length > 0 ? stagedItems : unstagedItems;
+    
+    if (targets.length === 0) return;
+    
+    const btn = document.getElementById('btn-explorer-upload');
+    const oldHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Saving...';
+    
+    try {
+        const formData = new FormData();
+        const pathsList = [];
+        
+        targets.forEach(c => {
+            pathsList.push(c.path);
+            
+            // Build the appropriate File/Blob payload
+            if (c.content instanceof File) {
+                // It is already a native File object from file browser or drag-and-drop
+                formData.append('files', c.content);
+            } else {
+                // It is text content from edit panel
+                const blob = new Blob([c.content], { type: 'text/plain' });
+                formData.append('files', blob, c.path.split('/').pop());
+            }
+        });
+        
+        formData.append('paths_json', JSON.stringify(pathsList));
+        
+        // POST to backend API
+        const resp = await fetch(`/api/server/${activeExplorerServer}/files`, {
+            method: 'POST',
+            body: formData // Body is multipart/form-data, browser handles boundaries automatically
+        });
+        
+        const json = await resp.json();
+        if (!resp.ok) {
+            throw new Error(json.error || `HTTP ${resp.status}`);
+        }
+        
+        showToast(json.message || "Successfully committed changes!", "success");
+        
+        // Remove uploaded items from state
+        targets.forEach(c => {
+            delete explorerChanges[c.path];
+        });
+        
+        // Reload current view and update staged/unstaged change lists
+        await loadExplorerDirectory(currentExplorerPath);
+        renderExplorerChanges();
+        
+    } catch (err) {
+        showToast(`Failed to upload changes: ${err.message}`, "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+    }
+}
+
+// Drag & Drop Setup
+function setupExplorerDragAndDrop() {
+    const zone = document.getElementById('explorer-drag-zone');
+    const overlay = document.getElementById('explorer-drag-overlay');
+    
+    if (!zone || !overlay) return;
+    
+    // Remove duplicates if setup multiple times
+    const newZone = zone.cloneNode(true);
+    zone.parentNode.replaceChild(newZone, zone);
+    
+    const dragOverlay = document.getElementById('explorer-drag-overlay');
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        newZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragOverlay.classList.add('drag-active');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        newZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragOverlay.classList.remove('drag-active');
+        }, false);
+    });
+    
+    newZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (!files || files.length === 0) return;
+        
+        Array.from(files).forEach(file => {
+            const path = currentExplorerPath ? `${currentExplorerPath}/${file.name}` : file.name;
+            explorerChanges[path] = {
+                path: path,
+                type: 'new',
+                content: file,
+                staged: false
+            };
+        });
+        
+        renderExplorerChanges();
+        showToast(`Prepared ${files.length} drop file(s) in unstaged changes.`, 'success');
+    }, false);
+}
+
+// Helper formats
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }

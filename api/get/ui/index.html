@@ -312,6 +312,110 @@
     </div>
 
 
+    <!-- File Explorer Modal -->
+    <div id="file-explorer-modal-overlay" class="modal-overlay" onclick="hideFileExplorerModal(event)">
+        <div class="modal modal--large file-explorer-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Files: <span id="explorer-server-name"></span> <span id="explorer-breadcrumbs" class="breadcrumbs"></span></h3>
+                <button class="btn btn-icon" onclick="hideFileExplorerModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            
+            <div class="modal-body file-explorer-body">
+                <div class="explorer-grid">
+                    
+                    <!-- Left Panel: Browser or Editor -->
+                    <div class="explorer-left-container">
+                        <!-- File Browser View -->
+                        <div id="explorer-browser-view" class="explorer-view-panel">
+                            <div class="explorer-toolbar">
+                                <button class="btn btn-sm btn-ghost" onclick="navigateExplorerUp()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                    Back
+                                </button>
+                                <button class="btn btn-sm btn-ghost" onclick="promptCreateFile()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    New File
+                                </button>
+                                <button class="btn btn-sm btn-ghost" onclick="promptCreateFolder()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                    New Folder
+                                </button>
+                                <button class="btn btn-sm btn-primary" onclick="triggerLocalFileSelect()">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    Upload Local
+                                </button>
+                                <input type="file" id="explorer-file-input" style="display: none;" multiple onchange="handleLocalFileSelect(event)">
+                            </div>
+                            
+                            <div class="explorer-files-panel" id="explorer-drag-zone">
+                                <div class="drag-overlay" id="explorer-drag-overlay">
+                                    <div class="drag-overlay-box">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                        <p>Drop files here to prepare for upload</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="explorer-file-list" id="explorer-file-list-container">
+                                    <!-- Items injected dynamically -->
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- File Editor View (Swapped dynamically) -->
+                        <div id="explorer-editor-view" class="explorer-view-panel" style="display: none;">
+                            <div class="explorer-toolbar">
+                                <span class="editor-file-title" id="editor-filename-label">Editing file...</span>
+                                <div style="display: flex; gap: var(--space-sm); margin-left: auto;">
+                                    <button class="btn btn-sm btn-ghost" onclick="closeExplorerEditor()">Cancel</button>
+                                    <button class="btn btn-sm btn-success" onclick="saveExplorerEditor()">Keep Changes</button>
+                                </div>
+                            </div>
+                            <div class="editor-textarea-container">
+                                <textarea id="explorer-editor-textarea" autocomplete="off" spellcheck="false"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Panel: Changes Staging and Upload -->
+                    <div class="explorer-right-container">
+                        <!-- Unstaged Changes Area -->
+                        <div class="staging-section unstaged-section">
+                            <h4 class="staging-header">
+                                <span>Unstaged Changes</span>
+                                <span id="count-unstaged" class="staging-badge">0</span>
+                            </h4>
+                            <div class="changes-list" id="unstaged-changes-list">
+                                <!-- Changes injected dynamically -->
+                            </div>
+                        </div>
+                        
+                        <!-- Staged Changes Area -->
+                        <div class="staging-section staged-section">
+                            <h4 class="staging-header">
+                                <span>Staged Changes</span>
+                                <span id="count-staged" class="staging-badge bg-green">0</span>
+                            </h4>
+                            <div class="changes-list" id="staged-changes-list">
+                                <!-- Staged items injected dynamically -->
+                            </div>
+                            
+                            <div class="upload-commit-panel">
+                                <button id="btn-explorer-upload" class="btn btn-primary btn-upload" onclick="uploadChangesToServer()">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                    <span id="btn-upload-text">Upload Changes</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Upload Mods Modal -->
     <div id="mods-modal-overlay" class="modal-overlay" onclick="hideModsModal(event)">
         <div class="modal" style="max-width: 500px; width: 90%;" onclick="event.stopPropagation()">
