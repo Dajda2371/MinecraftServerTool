@@ -212,6 +212,9 @@ class FirewallRuleUpdate(BaseModel):
     external_port: Optional[int] = None
     label: str = ""
 
+class QuickSettingsRequest(BaseModel):
+    server_port: int
+
 # ============================================================================
 # Auth Endpoints
 # ============================================================================
@@ -1454,6 +1457,101 @@ async def quick_add_voicechat_rule(name: str, current_user: str = Depends(get_cu
         "external_port": external_port,
         "label": "Simple Voice Chat"
     }
+
+# ============================================================================
+# Quick Settings Endpoints
+# ============================================================================
+@fastapi_app.get("/api/server/{name}/quick-settings")
+async def get_server_quick_settings(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    server_port = api.db.get_server_port_from_properties(name)
+    return {
+        "server_port": server_port
+    }
+
+@fastapi_app.put("/api/server/{name}/quick-settings")
+async def update_server_quick_settings(name: str, data: QuickSettingsRequest, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    if not check_server_access(name, current_user):
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    server_port = data.server_port
+    if not (1 <= server_port <= 65535):
+        raise HTTPException(status_code=400, detail="Server port must be between 1 and 65535")
+        
+    # Write to server.properties
+    try:
+        import os
+        server_local_path = os.path.abspath(os.path.join("data", "servers", name))
+        props_path = os.path.join(server_local_path, "server.properties")
+        os.makedirs(server_local_path, exist_ok=True)
+        
+        lines = []
+        port_updated = False
+        
+        if os.path.exists(props_path):
+            with open(props_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if "=" in stripped and not stripped.startswith("#"):
+                key, val = stripped.split("=", 1)
+                key = key.strip()
+                if key == "server-port":
+                    suffix = "\n" if not line.endswith("\r\n") else "\r\n"
+                    new_lines.append(f"server-port={server_port}{suffix}")
+                    port_updated = True
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+                
+        if not port_updated:
+            new_lines.append(f"server-port={server_port}\n")
+            
+        with open(props_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write server.properties: {e}")
+        
+    # Sync with DB servers table (get_server_port_from_properties executes DB update if different)
+    api.db.get_server_port_from_properties(name)
+    
+    # Sync primary firewall rule in DB
+    rules = api.db.get_server_firewall_rules(name)
+    primary_rule = None
+    for r in rules:
+        if r["label"] == "Primary Game Port":
+            primary_rule = r
+            break
+            
+    if primary_rule:
+        new_external = primary_rule["external_port"]
+        if primary_rule["external_port"] == primary_rule["internal_port"]:
+            new_external = server_port
+        try:
+            api.db.update_firewall_rule(
+                primary_rule["id"],
+                primary_rule["enabled"],
+                server_port,
+                "Primary Game Port",
+                new_external
+            )
+        except Exception as e:
+            print(f"[QuickSettings] Error syncing firewall rule in DB: {e}")
+    else:
+        try:
+            api.db.add_firewall_rule(name, "TCP", True, server_port, server_port, "Primary Game Port")
+        except Exception as e:
+            print(f"[QuickSettings] Error creating firewall rule in DB: {e}")
+            
+    return {"message": "Quick Settings updated successfully"}
 
 # ============================================================================
 # Static Files & View Routing

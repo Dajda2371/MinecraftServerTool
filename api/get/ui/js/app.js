@@ -1700,6 +1700,77 @@ function triggerSettingsModsUpload() {
     }, 200);
 }
 
+let activeQuickSettingsServer = null;
+
+function triggerSettingsQuickSettings() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    setTimeout(() => {
+        showQuickSettingsModal(name);
+    }, 200);
+}
+
+async function showQuickSettingsModal(name) {
+    activeQuickSettingsServer = name;
+    document.getElementById('quick-settings-server-name').textContent = name;
+    document.getElementById('quick-settings-modal-overlay').classList.add('is-visible');
+    
+    // Clear and set loading status
+    const portInput = document.getElementById('qs-server-port');
+    portInput.value = '';
+    portInput.disabled = true;
+    
+    try {
+        const data = await apiFetch(`/api/server/${name}/quick-settings`);
+        portInput.value = data.server_port || 25565;
+        portInput.disabled = false;
+    } catch (err) {
+        showToast(`Failed to load server.properties: ${err}`, 'error');
+        hideQuickSettingsModal();
+    }
+}
+
+function hideQuickSettingsModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('quick-settings-modal-overlay').classList.remove('is-visible');
+    activeQuickSettingsServer = null;
+}
+
+async function saveQuickSettings(e) {
+    e.preventDefault();
+    if (!activeQuickSettingsServer) return;
+    
+    const portInput = document.getElementById('qs-server-port');
+    const server_port = parseInt(portInput.value);
+    
+    if (isNaN(server_port) || server_port < 1 || server_port > 65535) {
+        showToast('Please enter a valid port between 1 and 65535.', 'error');
+        return;
+    }
+    
+    const saveBtn = document.getElementById('btn-save-quick-settings');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+    
+    try {
+        await apiFetch(`/api/server/${activeQuickSettingsServer}/quick-settings`, 'PUT', { server_port });
+        showToast('Server properties updated successfully!', 'success');
+        hideQuickSettingsModal();
+        
+        // Refresh server lists
+        if (typeof loadServers === 'function') {
+            loadServers();
+        }
+    } catch (err) {
+        showToast(`Failed to save server properties: ${err}`, 'error');
+    } finally {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+    }
+}
+
 // --- Server Logs Modal Controller ---
 async function showServerLogsModal(name) {
     activeLogsServer = name;

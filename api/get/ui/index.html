@@ -441,10 +441,53 @@
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Manage exposed container ports (TCP & UDP)</span>
                         </div>
                     </button>
+                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsQuickSettings()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
+                            <span style="font-weight: 600; font-size: 0.85rem;">Quick Settings</span>
+                            <span style="font-size: 0.725rem; color: var(--text-muted);">Configure server.properties (server-port, etc.)</span>
+                        </div>
+                    </button>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: var(--space-lg);">
                 <button type="button" class="btn btn-ghost" onclick="hideServerSettingsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Quick Settings Modal -->
+    <div id="quick-settings-modal-overlay" class="modal-overlay" onclick="hideQuickSettingsModal(event)">
+        <div class="modal modal--small quick-settings-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Quick Settings: <span id="quick-settings-server-name"></span></h3>
+                <button class="btn btn-icon" onclick="hideQuickSettingsModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            
+            <div class="modal-body quick-settings-modal-body" style="padding-top: var(--space-md);">
+                <form id="quick-settings-form" onsubmit="saveQuickSettings(event)">
+                    <!-- Sections stacked below each other -->
+                    <div class="quick-settings-section" style="margin-bottom: var(--space-xl);">
+                        <h4 style="border-bottom: 1px solid var(--border-default); padding-bottom: var(--space-xs); margin-bottom: var(--space-md); color: var(--accent); font-size: 0.95rem; font-weight: 600;">server.properties</h4>
+                        
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: var(--space-xs);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
+                                <label for="qs-server-port" style="font-weight: 600; margin-bottom: 0;">server-port</label>
+                                <input type="number" id="qs-server-port" placeholder="25565" required min="1" max="65535" style="width: 120px; text-align: right; font-weight: 600;">
+                            </div>
+                            <span class="form-hint" style="color: var(--text-muted); font-size: 0.725rem; margin-top: 4px; line-height: 1.4;">
+                                The internal port the Minecraft server listens on. Changing this automatically updates the primary firewall rule.
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions" style="margin-top: var(--space-lg); display: flex; justify-content: flex-end; gap: var(--space-md); padding-bottom: 0;">
+                        <button type="button" class="btn btn-ghost" onclick="hideQuickSettingsModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="btn-save-quick-settings">Save Settings</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
