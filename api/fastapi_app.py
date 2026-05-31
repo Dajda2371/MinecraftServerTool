@@ -18,6 +18,7 @@ import api.auth
 import api.infrared
 import api.post.server.create
 import api.get.forge
+import api.get.neoforge
 import api.post.server.run
 import api.post.server.stop
 import api.post.server.hostname
@@ -388,6 +389,19 @@ async def get_forge_versions_endpoint(mc_version: str, current_user: str = Depen
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch Forge versions: {str(e)}")
+
+@fastapi_app.get("/api/neoforge/versions")
+async def get_neoforge_versions_endpoint(mc_version: str, current_user: str = Depends(get_current_user)):
+    mc_version = mc_version.strip()
+    if not mc_version:
+        raise HTTPException(status_code=400, detail="mc_version is required")
+    try:
+        data = api.get.neoforge.get_neoforge_versions(mc_version)
+        return data
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch NeoForge versions: {str(e)}")
 
 @fastapi_app.post("/api/server/install")
 async def install_server(data: ServerNameRequest, current_user: str = Depends(get_current_user)):

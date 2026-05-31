@@ -553,6 +553,78 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         print(f"Forge server '{server_name}' installer downloaded successfully.")
         return f"Server '{server_name}' created successfully."
 
+    elif server_type.lower() == "neoforge":
+        # Parse mc_version and neoforge_version from version e.g. "1.20.1-20.1.2"
+        parts = server_version.split("-")
+        if len(parts) == 2:
+            mc_version, neoforge_version = parts[0], parts[1]
+        else:
+            mc_version = server_version
+            try:
+                from api.get.neoforge import get_neoforge_versions
+                scraped = get_neoforge_versions(mc_version)
+                if scraped.get("recommended"):
+                    neoforge_version = scraped["recommended"]["version"]
+                elif scraped.get("latest"):
+                    neoforge_version = scraped["latest"]["version"]
+                else:
+                    raise ValueError("No neoforge version found.")
+            except Exception:
+                return f"Invalid version format '{server_version}' for NeoForge. Expected 'mc_version-neoforge_version' (e.g. 1.20.1-20.1.2)."
+
+        # Try to find the installer URL
+        try:
+            from api.get.neoforge import get_neoforge_versions
+            scraped = get_neoforge_versions(mc_version)
+            url = None
+            for v in scraped["versions"]:
+                if v["version"] == neoforge_version:
+                    url = v["url"]
+                    break
+            if not url:
+                if scraped.get("recommended") and scraped["recommended"]["version"] == neoforge_version:
+                    url = scraped["recommended"]["url"]
+                elif scraped.get("latest") and scraped["latest"]["version"] == neoforge_version:
+                    url = scraped["latest"]["url"]
+            if not url:
+                gav = "net/neoforged/forge" if "-" in neoforge_version else "net/neoforged/neoforge"
+                url = f"https://maven.neoforged.net/releases/{gav}/{neoforge_version}/neoforge-{neoforge_version}-installer.jar"
+        except Exception:
+            gav = "net/neoforged/forge" if "-" in neoforge_version else "net/neoforged/neoforge"
+            url = f"https://maven.neoforged.net/releases/{gav}/{neoforge_version}/neoforge-{neoforge_version}-installer.jar"
+
+        update_server_info(
+            server_name, owner, "neoforge", server_version, "DOWNLOADING...",
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            memory_mb=memory_mb
+        )
+
+        try:
+            jar_name = f"neoforge-{neoforge_version}-installer.jar"
+            success, message, _ = run_vanilla_download_container(
+                server_name, server_version, url, jar_filename=jar_name, memory_mb=memory_mb
+            )
+            if not success:
+                raise RuntimeError(message)
+        except Exception as e:
+            print(f"Failed to download NeoForge installer: {e}")
+            import shutil
+            shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
+            return "Failed to create server."
+
+        # Update DB to the installer path
+        installer_jar_path = f"data/servers/{server_name}/{jar_name}"
+        update_server_info(
+            server_name, owner, "neoforge", server_version, installer_jar_path,
+            hostname=hostname,
+            container_name=f"mc-{server_name}",
+            memory_mb=memory_mb
+        )
+
+        print(f"NeoForge server '{server_name}' installer downloaded successfully.")
+        return f"Server '{server_name}' created successfully."
+
     else:
         print(f"Server type '{server_type}' is not supported yet.")
     return
@@ -636,7 +708,7 @@ def install_forge(server_name):
     
     # Update state in DB to INSTALLING...
     update_server_info(
-        server_name, info["owner"], "forge", info["version"], "INSTALLING...",
+        server_name, info["owner"], info["type"], info["version"], "INSTALLING...",
         hostname=info.get("hostname"),
         container_name=info.get("container_name"),
         memory_mb=info.get("memory_mb")
@@ -646,7 +718,7 @@ def install_forge(server_name):
     if not success:
         # Revert status back to INSTALL_REQUIRED
         update_server_info(
-            server_name, info["owner"], "forge", info["version"], installer_path,
+            server_name, info["owner"], info["type"], info["version"], installer_path,
             hostname=info.get("hostname"),
             container_name=info.get("container_name"),
             memory_mb=info.get("memory_mb")
@@ -656,7 +728,7 @@ def install_forge(server_name):
     # Update jar_path in DB
     new_jar_path = installer_path.replace("-installer.jar", ".jar")
     update_server_info(
-        server_name, info["owner"], "forge", info["version"], new_jar_path,
+        server_name, info["owner"], info["type"], info["version"], new_jar_path,
         hostname=info.get("hostname"),
         container_name=info.get("container_name"),
         memory_mb=info.get("memory_mb")

@@ -297,7 +297,7 @@ function renderServers() {
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                                        Stop
                                    </button>
-                                   ${type.toLowerCase() === 'forge'
+                                   ${(type.toLowerCase() === 'forge' || type.toLowerCase() === 'neoforge')
                                        ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
                                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                               Upload Mods
@@ -312,7 +312,7 @@ function renderServers() {
                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                        Delete
                                    </button>
-                                   ${type.toLowerCase() === 'forge'
+                                   ${(type.toLowerCase() === 'forge' || type.toLowerCase() === 'neoforge')
                                        ? `<button class="btn btn-sm btn-ghost" onclick="showModsModal('${escapeAttr(srv.name)}')">
                                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                               Upload Mods
@@ -398,11 +398,11 @@ async function createServer(e) {
     }
 
     let version = versionInput;
-    if (type === 'forge') {
+    if (type === 'forge' || type === 'neoforge') {
         const forgeSelect = document.getElementById('forge-version-select');
         const forgeVersion = forgeSelect.value;
         if (!forgeVersion) {
-            showToast('Please select a Forge version', 'error');
+            showToast(type === 'forge' ? 'Please select a Forge version' : 'Please select a NeoForge version', 'error');
             return;
         }
         version = `${versionInput}-${forgeVersion}`;
@@ -814,11 +814,15 @@ function handleServerTypeChange() {
     const versionLabel = document.getElementById('version-label');
     const versionInput = document.getElementById('server-version');
     const forgeGroup = document.getElementById('forge-version-group');
+    const forgeLabel = document.querySelector('label[for="forge-version-select"]');
     
-    if (type === 'forge') {
+    if (type === 'forge' || type === 'neoforge') {
         versionLabel.textContent = 'Minecraft Version';
-        versionInput.placeholder = 'e.g. 1.20.1';
+        versionInput.placeholder = type === 'forge' ? 'e.g. 1.20.1' : 'e.g. 1.21.1';
         forgeGroup.style.display = 'block';
+        if (forgeLabel) {
+            forgeLabel.textContent = type === 'forge' ? 'Forge Version' : 'NeoForge Version';
+        }
         handleMinecraftVersionInput();
     } else {
         versionLabel.textContent = 'Version';
@@ -829,7 +833,7 @@ function handleServerTypeChange() {
 
 function handleMinecraftVersionInput() {
     const type = document.getElementById('server-type').value;
-    if (type !== 'forge') return;
+    if (type !== 'forge' && type !== 'neoforge') return;
     
     const mcVersion = document.getElementById('server-version').value.trim();
     const select = document.getElementById('forge-version-select');
@@ -844,15 +848,21 @@ function handleMinecraftVersionInput() {
     
     clearTimeout(forgeDebounceTimeout);
     forgeDebounceTimeout = setTimeout(async () => {
-        hint.textContent = 'Fetching Forge versions...';
+        const isNeo = (type === 'neoforge');
+        hint.textContent = isNeo ? 'Fetching NeoForge versions...' : 'Fetching Forge versions...';
         select.innerHTML = '<option value="">Loading versions...</option>';
         try {
-            const data = await apiFetch(`/api/forge/versions?mc_version=${encodeURIComponent(mcVersion)}`);
+            const endpoint = isNeo 
+                ? `/api/neoforge/versions?mc_version=${encodeURIComponent(mcVersion)}`
+                : `/api/forge/versions?mc_version=${encodeURIComponent(mcVersion)}`;
+            const data = await apiFetch(endpoint);
             select.innerHTML = '';
             
             if (!data.versions || data.versions.length === 0) {
-                select.innerHTML = '<option value="">No Forge versions found</option>';
-                hint.textContent = 'Could not find any Forge versions for this Minecraft version.';
+                select.innerHTML = isNeo ? '<option value="">No NeoForge versions found</option>' : '<option value="">No Forge versions found</option>';
+                hint.textContent = isNeo 
+                    ? 'Could not find any NeoForge versions for this Minecraft version.'
+                    : 'Could not find any Forge versions for this Minecraft version.';
                 return;
             }
             
@@ -883,7 +893,9 @@ function handleMinecraftVersionInput() {
                 select.value = defaultVersion;
             }
             
-            hint.textContent = `Scraped successfully from official Forge files. Recommended/Latest selected by default.`;
+            hint.textContent = isNeo 
+                ? `Fetched successfully from NeoForge releases.`
+                : `Scraped successfully from official Forge files. Recommended/Latest selected by default.`;
         } catch (err) {
             select.innerHTML = '<option value="">Failed to load versions</option>';
             hint.textContent = `Error: ${err.message}`;

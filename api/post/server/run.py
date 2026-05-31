@@ -132,10 +132,10 @@ def run_server(server_name):
     if java_heap < 512:
         java_heap = 512
 
-    if info.get("type", "").lower() == "forge":
+    if info.get("type", "").lower() in ("forge", "neoforge"):
         run_sh_path = os.path.join(server_local_path, "run.sh")
         if os.path.exists(run_sh_path):
-            # For Forge 1.17+, configure memory limit inside user_jvm_args.txt
+            # For Forge 1.17+ / NeoForge, configure memory limit inside user_jvm_args.txt
             jvm_args_path = os.path.join(server_local_path, "user_jvm_args.txt")
             jvm_args_content = (
                 "# Xmx and Xms set by MC Server Manager\n"
@@ -151,11 +151,11 @@ def run_server(server_name):
                 
             cmd = f"bash run.sh nogui --port {port}"
         else:
-            # For Forge 1.16.5 and below, find the forge-*.jar
+            # For Forge 1.16.5 and below / legacy NeoForge, find the forge-*.jar or neoforge-*.jar
             forge_jar = None
             try:
                 for f in os.listdir(server_local_path):
-                    if f.endswith(".jar") and "forge" in f.lower() and "installer" not in f.lower():
+                    if f.endswith(".jar") and ("forge" in f.lower() or "neoforge" in f.lower()) and "installer" not in f.lower():
                         forge_jar = f
                         break
             except Exception:
@@ -252,7 +252,7 @@ def get_server_status(server_name):
             "hostname": info.get("hostname"),
         }
 
-    if info.get("type", "").lower() == "forge" and info.get("jar_path", "").endswith("-installer.jar"):
+    if info.get("type", "").lower() in ("forge", "neoforge") and info.get("jar_path", "").endswith("-installer.jar"):
         return {
             "name": server_name,
             "container": container_name,
