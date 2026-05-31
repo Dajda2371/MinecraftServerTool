@@ -183,6 +183,11 @@ def run_server(server_name):
                 proto = r["protocol"].lower()
                 internal = r["internal_port"]
                 external = r["external_port"]
+                
+                # Host port 25565 is bound by Infrared. Skip host publishing to prevent Docker allocation conflict.
+                if external == 25565:
+                    continue
+                    
                 key = f"{internal}/{proto}"
                 if key not in docker_ports:
                     docker_ports[key] = []
