@@ -136,7 +136,11 @@ def download_mod(driver, server_name, mod_name, mod_url, mc_version, loader_id, 
         file_page_url = file_href
 
     # Step 2: Open file detail page
-    driver.get(file_page_url)
+    try:
+        driver.get(file_page_url)
+    except Exception as e:
+        log_message(server_name, f"  ⚠ Detail page load failed for {mod_name}: {e}")
+        return False
     dismiss_cookie_bar(driver)
 
     try:
@@ -189,8 +193,12 @@ def download_mod(driver, server_name, mod_name, mod_url, mc_version, loader_id, 
             download_url = "https://www.curseforge.com" + download_href
         else:
             download_url = download_href
-        log_message(server_name, f"  Downloading file...")
-        driver.get(download_url)
+        try:
+            driver.get(download_url)
+        except Exception:
+            # Direct download links often trigger a download dialog and cause a page load timeout,
+            # which is completely normal. We catch it and proceed to wait for the download.
+            pass
 
     # Step 3: Wait for download to start/finish
     time.sleep(8)
@@ -254,10 +262,16 @@ def download_curseforge_mods_background(server_name, html_content):
         "safebrowsing.enabled": True,
     }
     options.add_experimental_option("prefs", prefs)
+    options.page_load_strategy = 'eager'
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument("--remote-allow-origins=*")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-infobars")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
@@ -267,6 +281,7 @@ def download_curseforge_mods_background(server_name, html_content):
         # Use Chromium Driver from standard debian path
         service = Service("/usr/bin/chromedriver")
         driver = webdriver.Chrome(service=service, options=options)
+        driver.set_page_load_timeout(30)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         driver.execute_cdp_cmd("Page.setDownloadBehavior", {
             "behavior": "allow",
