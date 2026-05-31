@@ -944,10 +944,10 @@ function selectModsSource(source) {
     const hint = document.getElementById('mods-file-hint');
     
     if (source === 'curseforge') {
-        fileInput.setAttribute('accept', '.html');
-        subtitle.textContent = 'Import CurseForge HTML Modlist';
-        text.innerHTML = 'Drag & drop your CurseForge <span class="browse-link">.html modlist</span> here or browse';
-        hint.textContent = 'Accepts CurseForge HTML export files (.html)';
+        fileInput.setAttribute('accept', '.html,.json');
+        subtitle.textContent = 'Import CurseForge Modlist / manifest.json';
+        text.innerHTML = 'Drag & drop your CurseForge <span class="browse-link">.html modlist or manifest.json</span> here or browse';
+        hint.textContent = 'Accepts CurseForge HTML export files (.html) or manifest.json (.json)';
     } else {
         fileInput.setAttribute('accept', '.jar');
         subtitle.textContent = 'Upload Local Mods';
@@ -989,8 +989,8 @@ function handleSelectedModFile(file) {
     if (!file) return;
     
     // Type checking
-    if (modsSelectedSource === 'curseforge' && !file.name.endsWith('.html')) {
-        showToast('Please select a .html CurseForge modlist file.', 'error');
+    if (modsSelectedSource === 'curseforge' && !file.name.endsWith('.html') && !file.name.endsWith('.json')) {
+        showToast('Please select a .html CurseForge modlist or manifest.json file.', 'error');
         clearSelectedModFile();
         return;
     }

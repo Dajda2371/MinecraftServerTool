@@ -218,7 +218,7 @@ def download_mod(driver, server_name, mod_name, mod_url, mc_version, loader_id, 
 
 def download_curseforge_mods_background(server_name, html_content):
     """
-    Downloads mods listed in a CurseForge HTML modlist export inside a background worker.
+    Downloads mods listed in a CurseForge HTML modlist export or a manifest.json file inside a background worker.
     """
     log_message(server_name, "\n=== CURSEFORGE MOD DOWNLOADER ===")
     
@@ -239,18 +239,46 @@ def download_curseforge_mods_background(server_name, html_content):
         mods_dir = os.path.abspath(f"data/servers/{server_name}/mods")
     os.makedirs(mods_dir, exist_ok=True)
     
-    # Parse the HTML content
-    soup = BeautifulSoup(html_content, "html.parser")
-    mod_entries = [
-        (a.get_text(strip=True), a["href"])
-        for a in soup.find_all("a", href=True)
-        if "curseforge.com/minecraft/mc-mods/" in a["href"]
-    ]
-    
-    log_message(server_name, f"Found {len(mod_entries)} mod(s) in HTML modlist.")
-    if not mod_entries:
-        log_message(server_name, "No compatible CurseForge mod links found. Completed.")
-        return
+    # Try parsing the content as JSON manifest first
+    import json
+    is_json = False
+    manifest = None
+    try:
+        manifest = json.loads(html_content)
+        is_json = True
+    except Exception:
+        pass
+        
+    if is_json:
+        files = manifest.get("files", [])
+        mod_entries = []
+        for f in files:
+            if f.get("required") is True:
+                project_id = f.get("projectID")
+                file_id = f.get("fileID")
+                if project_id and file_id:
+                    mod_entries.append({
+                        "project_id": project_id,
+                        "file_id": file_id
+                    })
+        
+        log_message(server_name, f"Found {len(mod_entries)} required mod(s) in manifest.json.")
+        if not mod_entries:
+            log_message(server_name, "No required CurseForge mods found. Completed.")
+            return
+    else:
+        # Parse the HTML content
+        soup = BeautifulSoup(html_content, "html.parser")
+        mod_html_entries = [
+            (a.get_text(strip=True), a["href"])
+            for a in soup.find_all("a", href=True)
+            if "curseforge.com/minecraft/mc-mods/" in a["href"]
+        ]
+        
+        log_message(server_name, f"Found {len(mod_html_entries)} mod(s) in HTML modlist.")
+        if not mod_html_entries:
+            log_message(server_name, "No compatible CurseForge mod links found. Completed.")
+            return
 
     # Setup headless Chromium
     log_message(server_name, "Initializing anti-detect browser driver...")
@@ -303,13 +331,103 @@ def download_curseforge_mods_background(server_name, html_content):
     succeeded = 0
     failed = []
 
-    for idx, (mod_name, mod_url) in enumerate(mod_entries, 1):
-        log_message(server_name, f"\n[{idx}/{len(mod_entries)}] {mod_name}")
-        ok = download_mod(driver, server_name, mod_name, mod_url, mc_version, loader_id, mods_dir)
-        if ok:
-            succeeded += 1
-        else:
-            failed.append(mod_name)
+    if is_json:
+        for idx, mod in enumerate(mod_entries, 1):
+            project_id = mod["project_id"]
+            file_id = mod["file_id"]
+            log_message(server_name, f"\n[{idx}/{len(mod_entries)}] Processing Project ID {project_id}, File ID {file_id}")
+            
+            # Step 1: go to curseforge.com/projects/ID (redirects to minecraft/mc-mods/slug)
+            proj_url = f"https://www.curseforge.com/projects/{project_id}"
+            try:
+                driver.get(proj_url)
+                time.sleep(3)
+                dismiss_cookie_bar(driver)
+                
+                # Step 2: form file detail URL
+                redirected_url = driver.current_url.split("?")[0].rstrip("/")
+                file_details_url = f"{redirected_url}/files/{file_id}"
+                log_message(server_name, f"  Navigating to details: {file_details_url}")
+                driver.get(file_details_url)
+                time.sleep(3)
+                dismiss_cookie_bar(driver)
+                
+                # Step 3: find the filename.jar in <section class="section-file-name"><h3>File Name</h3><p class="wrap">{file name}.jar</p></section>
+                file_name = driver.execute_script("""
+                    var p = document.querySelector('section.section-file-name p.wrap');
+                    if (p) return p.textContent.trim();
+                    var sec = document.querySelector('section.section-file-name');
+                    if (sec) return sec.textContent.replace('File Name', '').trim();
+                    return null;
+                """)
+                
+                if not file_name:
+                    # Fallback to BeautifulSoup
+                    soup = BeautifulSoup(driver.page_source, "html.parser")
+                    sec = soup.find("section", class_="section-file-name")
+                    if sec:
+                        p = sec.find("p", class_="wrap")
+                        if p:
+                            file_name = p.get_text(strip=True)
+                        else:
+                            file_name = sec.get_text(strip=True).replace("File Name", "").strip()
+                            
+                if not file_name:
+                    log_message(server_name, f"  ⚠ Could not find File Name on details page for Project {project_id}, File {file_id}")
+                    failed.append(f"Project {project_id} (File {file_id})")
+                    continue
+                    
+                log_message(server_name, f"  Found file name: {file_name}")
+                
+                # Step 4: go to edge.forgecdn.net
+                file_id_str = str(file_id)
+                if len(file_id_str) < 4:
+                    rest = "0"
+                    last_three = file_id_str.zfill(3)
+                else:
+                    rest = file_id_str[:-3]
+                    last_three = file_id_str[-3:]
+                    
+                direct_download_url = f"https://edge.forgecdn.net/files/{rest}/{last_three}/{file_name}"
+                log_message(server_name, f"  Downloading via CDN: {direct_download_url}")
+                
+                # Direct download using requests
+                try:
+                    import requests
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    }
+                    dest_path = os.path.join(mods_dir, file_name)
+                    response = requests.get(direct_download_url, headers=headers, stream=True, timeout=30)
+                    if response.status_code == 200:
+                        with open(dest_path, "wb") as f_out:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f_out.write(chunk)
+                        size_mb = os.path.getsize(dest_path) / (1024 * 1024)
+                        log_message(server_name, f"  ✓ Saved: {file_name} ({size_mb:.2f} MB)")
+                        succeeded += 1
+                    else:
+                        raise Exception(f"Direct download failed with status {response.status_code}")
+                except Exception as dl_err:
+                    log_message(server_name, f"  ⚠ Direct CDN download failed: {dl_err}. Retrying with browser...")
+                    try:
+                        driver.get(direct_download_url)
+                        time.sleep(3)
+                        succeeded += 1
+                    except Exception as browser_err:
+                        log_message(server_name, f"  ❌ Browser download attempt failed: {browser_err}")
+                        failed.append(file_name)
+            except Exception as e:
+                log_message(server_name, f"  ❌ Error processing mod Project {project_id}: {e}")
+                failed.append(f"Project {project_id} (File {file_id})")
+    else:
+        for idx, (mod_name, mod_url) in enumerate(mod_html_entries, 1):
+            log_message(server_name, f"\n[{idx}/{len(mod_html_entries)}] {mod_name}")
+            ok = download_mod(driver, server_name, mod_name, mod_url, mc_version, loader_id, mods_dir)
+            if ok:
+                succeeded += 1
+            else:
+                failed.append(mod_name)
 
     log_message(server_name, "\nFinalizing active downloads...")
     wait_for_downloads(mods_dir, timeout=20)
@@ -319,8 +437,9 @@ def download_curseforge_mods_background(server_name, html_content):
     except Exception:
         pass
 
+    total_count = len(mod_entries) if is_json else len(mod_html_entries)
     log_message(server_name, "\n=== DOWNLOAD RUN SUMMARY ===")
-    log_message(server_name, f"✓ Succeeded: {succeeded}/{len(mod_entries)}")
+    log_message(server_name, f"✓ Succeeded: {succeeded}/{total_count}")
     if failed:
         log_message(server_name, f"⚠ Failed ({len(failed)}):")
         for f in failed:

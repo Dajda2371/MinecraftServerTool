@@ -434,8 +434,8 @@ async def upload_modlist(name: str, file: UploadFile = File(...), current_user: 
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
-    if not file.filename.endswith(".html"):
-        raise HTTPException(status_code=400, detail="Only CurseForge exported .html modlists are allowed")
+    if not file.filename.endswith(".html") and not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only CurseForge exported .html modlists or manifest.json files are allowed")
         
     try:
         content_bytes = await file.read()
