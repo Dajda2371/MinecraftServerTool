@@ -643,6 +643,60 @@ async def upload_server_files(
                 f.write(content)
             saved_count += 1
             
+        # Post-upload properties files synchronization
+        sync_server_props = False
+        sync_vc_props = False
+        for rel_path in paths:
+            rel_path_lower = rel_path.lower()
+            if "server.properties" in rel_path_lower:
+                sync_server_props = True
+            if "voicechat-server.properties" in rel_path_lower:
+                sync_vc_props = True
+                
+        if sync_server_props:
+            try:
+                server_port = api.db.get_server_port_from_properties(name)
+                rules = api.db.get_server_firewall_rules(name)
+                primary_rule = None
+                for r in rules:
+                    if r["label"] == "Primary Game Port":
+                        primary_rule = r
+                        break
+                if primary_rule and primary_rule["internal_port"] != server_port:
+                    new_external = primary_rule["external_port"]
+                    if primary_rule["external_port"] == primary_rule["internal_port"]:
+                        new_external = server_port
+                    api.db.update_firewall_rule(
+                        primary_rule["id"],
+                        primary_rule["enabled"],
+                        server_port,
+                        "Primary Game Port",
+                        new_external
+                    )
+            except Exception as e:
+                print(f"[Upload Properties Sync Error] {e}")
+                
+        if sync_vc_props:
+            try:
+                vc = api.voicechat.detect_voicechat(name)
+                if vc["detected"] and vc["current_port"]:
+                    vc_port = vc["current_port"]
+                    rules = api.db.get_server_firewall_rules(name)
+                    vc_rule = None
+                    for r in rules:
+                        if r["protocol"] == "UDP" and r["label"].strip().lower() == "simple voice chat":
+                            vc_rule = r
+                            break
+                    if vc_rule and vc_rule["internal_port"] != vc_port:
+                        api.db.update_firewall_rule(
+                            vc_rule["id"],
+                            vc_rule["enabled"],
+                            vc_port,
+                            "Simple Voice Chat"
+                        )
+            except Exception as e:
+                print(f"[Upload Properties Sync Error] {e}")
+            
         return {"message": f"Successfully uploaded/saved {saved_count} file(s)."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save files: {str(e)}")
