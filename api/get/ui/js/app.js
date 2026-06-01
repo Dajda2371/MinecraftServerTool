@@ -814,6 +814,12 @@ document.addEventListener('keydown', (e) => {
         hideUsersModal();
         hideLogsModal();
         hideConsoleModal();
+        hideFileExplorerModal();
+        hideServerSettingsModal();
+        hideQuickSettingsModal();
+        hideServerLogsModal();
+        hideFirewallModal();
+        hideModsModal();
     }
     // Ctrl+N to create server
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
