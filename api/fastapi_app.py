@@ -871,40 +871,67 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
         # 3. Send the command to container stdin — same path for every command,
         #    including `stop`. Sending it via stdin lets Minecraft run its
         #    normal shutdown sequence and emit its usual log lines.
-        import docker
-        client = docker.from_env()
-        container = client.containers.get(container_name)
+        #    BUT if it's a stop command and the server is not fully booted yet,
+        #    we bypass immediate execution to queue it and send it after booting.
+        is_stop_cmd = command.strip().lower() == "stop"
+        is_started = True
+        if is_stop_cmd:
+            is_started = api.post.server.stop.is_server_fully_started(name)
 
-        sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
-        payload = (command + "\n").encode("utf-8")
+        if not is_stop_cmd or is_started:
+            import docker
+            client = docker.from_env()
+            container = client.containers.get(container_name)
 
-        if hasattr(sock, '_sock'):
-            sock._sock.sendall(payload)
-        elif hasattr(sock, 'send'):
-            sock.send(payload)
-        else:
-            sock.write(payload)
+            sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
+            payload = (command + "\n").encode("utf-8")
 
-        sock.close()
+            if hasattr(sock, '_sock'):
+                sock._sock.sendall(payload)
+            elif hasattr(sock, 'send'):
+                sock.send(payload)
+            else:
+                sock.write(payload)
+
+            sock.close()
 
         # 4. For `stop`: gracefully wait for it to exit, write saved log line,
         #    and stop the container so Docker marks it as stopped.
-        if command.strip().lower() == "stop":
-            def _watch_and_stop_bg(srv_name):
-                api.post.server.stop.stop_server(srv_name, send_cmd=False)
-                if loop:
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            sio.emit("servers_updated", {}), loop,
-                        )
-                    except Exception as emit_err:
-                        print(f"[Stop Bg] emit error for '{srv_name}': {emit_err}")
+        if is_stop_cmd:
+            if not is_started:
+                # Spawn background thread to queue and send "stop" after it starts
+                def _queue_and_send_stop(srv_name):
+                    api.post.server.stop.stop_server(srv_name, send_cmd=True)
+                    if loop:
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                sio.emit("servers_updated", {}), loop,
+                            )
+                        except Exception as emit_err:
+                            print(f"[Stop Bg] emit error for '{srv_name}': {emit_err}")
 
-            threading.Thread(
-                target=_watch_and_stop_bg,
-                args=(name,),
-                daemon=True,
-            ).start()
+                threading.Thread(
+                    target=_queue_and_send_stop,
+                    args=(name,),
+                    daemon=True,
+                ).start()
+            else:
+                # Already booted and sent stop, just monitor it
+                def _watch_and_stop_bg(srv_name):
+                    api.post.server.stop.stop_server(srv_name, send_cmd=False)
+                    if loop:
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                sio.emit("servers_updated", {}), loop,
+                            )
+                        except Exception as emit_err:
+                            print(f"[Stop Bg] emit error for '{srv_name}': {emit_err}")
+
+                threading.Thread(
+                    target=_watch_and_stop_bg,
+                    args=(name,),
+                    daemon=True,
+                ).start()
 
         return {"response": ""}
     except Exception as e:

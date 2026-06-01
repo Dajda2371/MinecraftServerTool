@@ -92,13 +92,100 @@ def inject_commands_into_log(server_name):
         print(f"[Inject] Could not write latest.log for '{server_name}': {e}")
 
 
+def is_server_fully_started(server_name):
+    """
+    Check if the Minecraft server has fully booted by looking for standard Done sentinels
+    in the current session's latest.log.
+    """
+    log_path = f"data/servers/{server_name}/logs/latest.log"
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                # Check for standard server finished loading / Done sentinels
+                if "DedicatedServer/]: Done (" in content or "DedicatedServer/]: Done " in content or "]: Done (" in content or "For help, type \"help\"" in content:
+                    return True
+        except Exception:
+            pass
+    return False
+
+
+def _execute_stop_sequence(server_name, container, send_cmd):
+    """
+    Core stop sequence:
+    1. Send "stop\n" command to container stdin (if send_cmd is True).
+    2. Wait up to 30 seconds for gracefully exiting.
+    3. Inject dynamic ThreadedAnvilChunkStorage saved log.
+    4. Call container.stop() unconditionally to trigger Docker daemon graceful stop.
+    """
+    container_name = container.name
+    if send_cmd:
+        try:
+            sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
+            payload = ("stop\n").encode("utf-8")
+            if hasattr(sock, '_sock'):
+                sock._sock.sendall(payload)
+            elif hasattr(sock, 'send'):
+                sock.send(payload)
+            else:
+                sock.write(payload)
+            sock.close()
+            print(f"[Docker] Sent 'stop' command to stdin of '{container_name}'.")
+        except Exception as stdin_err:
+            print(f"[Docker] Failed to send stop command to stdin: {stdin_err}")
+    
+    # Poll status for up to 30 seconds
+    import time
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        try:
+            container.reload()
+            if container.status != "running":
+                break
+        except Exception:
+            break
+        time.sleep(0.5)
+
+    # Append the ThreadedAnvilChunkStorage log line to latest.log
+    import datetime
+    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    now = datetime.datetime.now()
+    day = now.strftime("%d")
+    month = months[now.month - 1]
+    year = now.strftime("%Y")
+    time_str = now.strftime("%H:%M:%S.%f")[:-3]
+    timestamp = f"{day}{month}{year} {time_str}"
+    
+    log_line = f"[{timestamp}] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: ThreadedAnvilChunkStorage: All dimensions are saved\n"
+    
+    log_path = f"data/servers/{server_name}/logs/latest.log"
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(log_line)
+            print(f"[Docker] Wrote saved-chunks sentinel log to {log_path}")
+        except Exception as write_err:
+            print(f"[Docker] Failed to write saved chunks line to latest.log: {write_err}")
+
+    # Stop/kill container explicitly to mark it as stopped for Docker restart policy.
+    # We call stop() unconditionally (even if status is not 'running') to guarantee
+    # that Docker registers it as a user-initiated stop and doesn't restart it.
+    try:
+        container.stop(timeout=10)
+    except Exception as stop_err:
+        print(f"[Docker] container.stop exception: {stop_err}")
+
+    print(f"[Docker] Container '{container_name}' stopped.")
+
+
 def stop_server(server_name, send_cmd=True):
     """
     Stop a Minecraft server's Docker container gracefully by:
-    1. Issuing "stop" command to container stdin (if send_cmd is True).
-    2. Waiting up to 30 seconds for graceful shutdown.
-    3. Appending the ThreadedAnvilChunkStorage message to latest.log.
-    4. Forcefully stopping/killing the container if needed.
+    1. Checking if the server is still booting. If so, queues the stop command to run once fully booted.
+    2. Issuing "stop" command to container stdin (if already fully booted).
+    3. Waiting up to 30 seconds for graceful shutdown.
+    4. Appending the ThreadedAnvilChunkStorage message to latest.log.
+    5. Forcefully stopping/killing the container if needed.
     """
     info = get_server_info(server_name)
     if not info:
@@ -111,66 +198,43 @@ def stop_server(server_name, send_cmd=True):
         container = client.containers.get(container_name)
 
         if container.status == "running":
-            print(f"[Docker] Gracefully stopping server '{server_name}'...")
-            
-            if send_cmd:
-                try:
-                    sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
-                    payload = ("stop\n").encode("utf-8")
-                    if hasattr(sock, '_sock'):
-                        sock._sock.sendall(payload)
-                    elif hasattr(sock, 'send'):
-                        sock.send(payload)
-                    else:
-                        sock.write(payload)
-                    sock.close()
-                    print(f"[Docker] Sent 'stop' command to stdin of '{container_name}'.")
-                except Exception as stdin_err:
-                    print(f"[Docker] Failed to send stop command to stdin: {stdin_err}")
-            
-            # Poll status for up to 30 seconds
-            import time
-            deadline = time.time() + 30
-            while time.time() < deadline:
-                try:
-                    container.reload()
-                    if container.status != "running":
-                        break
-                except Exception:
-                    break
-                time.sleep(0.5)
+            if not is_server_fully_started(server_name):
+                # Server is currently booting up! Queue the stop command
+                print(f"[Docker] Server '{server_name}' is still booting. Queueing stop command...")
+                
+                def _queued_stop_worker(srv_name, send_cmd_flag):
+                    import time
+                    # Watch latest.log for the bootup done sentinel (up to 120 seconds)
+                    deadline = time.time() + 120
+                    while time.time() < deadline:
+                        if is_server_fully_started(srv_name):
+                            print(f"[Docker] Queued stop: Server '{srv_name}' has fully booted. Initiating stop...")
+                            break
+                        # Also check if container stopped unexpectedly on its own
+                        try:
+                            container.reload()
+                            if container.status != "running":
+                                print(f"[Docker] Queued stop: Container '{container_name}' is no longer running.")
+                                break
+                        except Exception:
+                            break
+                        time.sleep(0.5)
+                    
+                    # Execute graceful stop sequence!
+                    _execute_stop_sequence(srv_name, container, send_cmd_flag)
 
-            # Append the ThreadedAnvilChunkStorage log line to latest.log
-            import datetime
-            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-            now = datetime.datetime.now()
-            day = now.strftime("%d")
-            month = months[now.month - 1]
-            year = now.strftime("%Y")
-            time_str = now.strftime("%H:%M:%S.%f")[:-3]
-            timestamp = f"{day}{month}{year} {time_str}"
-            
-            log_line = f"[{timestamp}] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: ThreadedAnvilChunkStorage: All dimensions are saved\n"
-            
-            log_path = f"data/servers/{server_name}/logs/latest.log"
-            if os.path.exists(log_path):
-                try:
-                    with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(log_line)
-                    print(f"[Docker] Wrote saved-chunks sentinel log to {log_path}")
-                except Exception as write_err:
-                    print(f"[Docker] Failed to write saved chunks line to latest.log: {write_err}")
-
-            # Stop/kill container explicitly to mark it as stopped for Docker restart policy.
-            # We call stop() unconditionally (even if status is not 'running') to guarantee
-            # that Docker registers it as a user-initiated stop and doesn't restart it.
-            try:
-                container.stop(timeout=10)
-            except Exception as stop_err:
-                print(f"[Docker] container.stop exception: {stop_err}")
-
-            print(f"[Docker] Container '{container_name}' stopped.")
-            return f"Server '{server_name}' stopped successfully."
+                import threading
+                threading.Thread(
+                    target=_queued_stop_worker,
+                    args=(server_name, send_cmd),
+                    daemon=True
+                ).start()
+                
+                return f"Server '{server_name}' is currently starting. Stop command has been queued and will execute automatically once startup is complete."
+            else:
+                # Already booted up, proceed immediately!
+                _execute_stop_sequence(server_name, container, send_cmd)
+                return f"Server '{server_name}' stopped successfully."
         else:
             return f"Server '{server_name}' is not running (status: {container.status})."
 
