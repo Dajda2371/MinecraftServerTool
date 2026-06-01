@@ -887,50 +887,22 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
 
         sock.close()
 
-        # 4. For `stop`: once Minecraft has finished saving (sentinel line),
-        #    call container.stop() so Docker marks the exit as user-initiated
-        #    and the `unless-stopped` restart policy doesn't bring it back up.
+        # 4. For `stop`: gracefully wait for it to exit, write saved log line,
+        #    and stop the container so Docker marks it as stopped.
         if command.strip().lower() == "stop":
-            def _watch_and_stop(container_obj, srv_name):
-                import time as _time
-                sentinel = "ThreadedAnvilChunkStorage: All dimensions are saved"
-                watch_path = f"data/servers/{srv_name}/logs/latest.log"
-                file_pos = os.path.getsize(watch_path) if os.path.exists(watch_path) else 0
-                deadline = _time.time() + 60
-                seen = False
-                while _time.time() < deadline and not seen:
-                    try:
-                        if os.path.exists(watch_path):
-                            with open(watch_path, "r", encoding="utf-8", errors="ignore") as wf:
-                                wf.seek(file_pos)
-                                for ln in wf:
-                                    file_pos += len(ln.encode("utf-8"))
-                                    if sentinel in ln:
-                                        seen = True
-                                        break
-                    except Exception as read_err:
-                        print(f"[Stop Watch] read error for '{srv_name}': {read_err}")
-                    if not seen:
-                        _time.sleep(0.3)
-
-                try:
-                    container_obj.reload()
-                    if container_obj.status == "running":
-                        container_obj.stop(timeout=30)
-                except Exception as stop_err:
-                    print(f"[Stop Watch] stop error for '{srv_name}': {stop_err}")
-
+            def _watch_and_stop_bg(srv_name):
+                api.post.server.stop.stop_server(srv_name, send_cmd=False)
                 if loop:
                     try:
                         asyncio.run_coroutine_threadsafe(
                             sio.emit("servers_updated", {}), loop,
                         )
                     except Exception as emit_err:
-                        print(f"[Stop Watch] emit error for '{srv_name}': {emit_err}")
+                        print(f"[Stop Bg] emit error for '{srv_name}': {emit_err}")
 
             threading.Thread(
-                target=_watch_and_stop,
-                args=(container, name),
+                target=_watch_and_stop_bg,
+                args=(name,),
                 daemon=True,
             ).start()
 

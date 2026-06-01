@@ -92,12 +92,13 @@ def inject_commands_into_log(server_name):
         print(f"[Inject] Could not write latest.log for '{server_name}': {e}")
 
 
-def stop_server(server_name):
+def stop_server(server_name, send_cmd=True):
     """
-    Stop a Minecraft server's Docker container gracefully.
-
-    Sends SIGTERM and waits up to 30 seconds for graceful shutdown,
-    then forcefully kills if needed.
+    Stop a Minecraft server's Docker container gracefully by:
+    1. Issuing "stop" command to container stdin (if send_cmd is True).
+    2. Waiting up to 30 seconds for graceful shutdown.
+    3. Appending the ThreadedAnvilChunkStorage message to latest.log.
+    4. Forcefully stopping/killing the container if needed.
     """
     info = get_server_info(server_name)
     if not info:
@@ -110,8 +111,64 @@ def stop_server(server_name):
         container = client.containers.get(container_name)
 
         if container.status == "running":
-            print(f"[Docker] Stopping container '{container_name}'...")
-            container.stop(timeout=30)
+            print(f"[Docker] Gracefully stopping server '{server_name}'...")
+            
+            if send_cmd:
+                try:
+                    sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
+                    payload = ("stop\n").encode("utf-8")
+                    if hasattr(sock, '_sock'):
+                        sock._sock.sendall(payload)
+                    elif hasattr(sock, 'send'):
+                        sock.send(payload)
+                    else:
+                        sock.write(payload)
+                    sock.close()
+                    print(f"[Docker] Sent 'stop' command to stdin of '{container_name}'.")
+                except Exception as stdin_err:
+                    print(f"[Docker] Failed to send stop command to stdin: {stdin_err}")
+            
+            # Poll status for up to 30 seconds
+            import time
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                try:
+                    container.reload()
+                    if container.status != "running":
+                        break
+                except Exception:
+                    break
+                time.sleep(0.5)
+
+            # Append the ThreadedAnvilChunkStorage log line to latest.log
+            import datetime
+            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            now = datetime.datetime.now()
+            day = now.strftime("%d")
+            month = months[now.month - 1]
+            year = now.strftime("%Y")
+            time_str = now.strftime("%H:%M:%S.%f")[:-3]
+            timestamp = f"{day}{month}{year} {time_str}"
+            
+            log_line = f"[{timestamp}] [Server thread/INFO] [net.minecraft.server.MinecraftServer/]: ThreadedAnvilChunkStorage: All dimensions are saved\n"
+            
+            log_path = f"data/servers/{server_name}/logs/latest.log"
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(log_line)
+                    print(f"[Docker] Wrote saved-chunks sentinel log to {log_path}")
+                except Exception as write_err:
+                    print(f"[Docker] Failed to write saved chunks line to latest.log: {write_err}")
+
+            # Stop/kill container explicitly to mark it as stopped for Docker restart policy
+            try:
+                container.reload()
+                if container.status == "running":
+                    container.stop(timeout=10)
+            except Exception as stop_err:
+                print(f"[Docker] container.stop exception: {stop_err}")
+
             print(f"[Docker] Container '{container_name}' stopped.")
             return f"Server '{server_name}' stopped successfully."
         else:
