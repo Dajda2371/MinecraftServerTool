@@ -71,9 +71,10 @@ def configure_server_properties(server_path, port):
             f.write(f"{key}={value}\n")
 
 
-def run_server(server_name):
+def run_server(server_name, only_create=False):
     """
     Start a Minecraft server inside an isolated Docker container on mc-net.
+    If only_create is True, the container is created but kept stopped.
 
     The container:
     - Uses the server's assigned internal port (not published to host)
@@ -200,29 +201,50 @@ def run_server(server_name):
         except Exception as fw_err:
             print(f"[Firewall] Warning: failed to fetch firewall rules: {fw_err}")
 
-        print(f"[Docker] Starting container '{container_name}' on internal port {port} with dynamic ports: {docker_ports}...")
-        container = client.containers.run(
-            image=DEFAULT_SERVER_IMAGE,
-            command=cmd,
-            name=container_name,
-            detach=True,
-            stdin_open=True,
-            # Connect internal network and also publish host ports
-            network=DOCKER_NETWORK,
-            ports=docker_ports,
-            mounts=[server_data_mount(server_name)],
-            working_dir="/data",
-            # Entrypoint in the image starts as root, chowns /data, then
-            # drops to UID 1000 via gosu before exec'ing Java.
-            environment={
-                "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
-            },
-            # Resource limits
-            mem_limit=f"{memory_mb}m",
-            # Restart policy
-            restart_policy={"Name": "unless-stopped"},
-            labels=get_compose_labels(f"server-{server_name}"),
-        )
+        if only_create:
+            print(f"[Docker] Recreating container '{container_name}' in created/stopped state on internal port {port} with dynamic ports: {docker_ports}...")
+            container = client.containers.create(
+                image=DEFAULT_SERVER_IMAGE,
+                command=cmd,
+                name=container_name,
+                # Connect internal network and also publish host ports
+                network=DOCKER_NETWORK,
+                ports=docker_ports,
+                mounts=[server_data_mount(server_name)],
+                working_dir="/data",
+                environment={
+                    "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                },
+                # Resource limits
+                mem_limit=f"{memory_mb}m",
+                # Restart policy
+                restart_policy={"Name": "unless-stopped"},
+                labels=get_compose_labels(f"server-{server_name}"),
+            )
+        else:
+            print(f"[Docker] Starting container '{container_name}' on internal port {port} with dynamic ports: {docker_ports}...")
+            container = client.containers.run(
+                image=DEFAULT_SERVER_IMAGE,
+                command=cmd,
+                name=container_name,
+                detach=True,
+                stdin_open=True,
+                # Connect internal network and also publish host ports
+                network=DOCKER_NETWORK,
+                ports=docker_ports,
+                mounts=[server_data_mount(server_name)],
+                working_dir="/data",
+                # Entrypoint in the image starts as root, chowns /data, then
+                # drops to UID 1000 via gosu before exec'ing Java.
+                environment={
+                    "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                },
+                # Resource limits
+                mem_limit=f"{memory_mb}m",
+                # Restart policy
+                restart_policy={"Name": "unless-stopped"},
+                labels=get_compose_labels(f"server-{server_name}"),
+            )
 
         # Update DB with container info
         update_server_info(
@@ -241,14 +263,17 @@ def run_server(server_name):
         except Exception as e:
             print(f"[Infrared] Warning: Could not reload Infrared config: {e}")
 
-        return (
-            f"Server '{server_name}' started in container '{container_name}' "
-            f"on internal port {port} (mc-net). "
-            f"Not published to host — accessible only via Infrared proxy."
-        )
+        if only_create:
+            return f"Server '{server_name}' firewall/port settings applied successfully (container recreated and kept stopped)."
+        else:
+            return (
+                f"Server '{server_name}' started in container '{container_name}' "
+                f"on internal port {port} (mc-net). "
+                f"Not published to host — accessible only via Infrared proxy."
+            )
 
     except Exception as e:
-        return f"Failed to start container for '{server_name}': {str(e)}"
+        return f"Failed to recreate/start container for '{server_name}': {str(e)}"
 
 
 def get_server_status(server_name):

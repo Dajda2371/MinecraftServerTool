@@ -1457,8 +1457,14 @@ async def apply_firewall_rules(name: str, current_user: str = Depends(get_curren
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
-    # Recreate the server container
-    result = await asyncio.to_thread(api.post.server.run.run_server, name)
+    # Check if the server is currently running
+    status_info = api.post.server.run.get_server_status(name)
+    is_running = False
+    if isinstance(status_info, dict) and status_info.get("status") == "running":
+        is_running = True
+
+    # Recreate the server container (rebuild ports)
+    result = await asyncio.to_thread(api.post.server.run.run_server, name, not is_running)
     await sio.emit("servers_updated", {})
     return {"message": result}
 
