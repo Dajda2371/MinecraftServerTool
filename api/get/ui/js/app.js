@@ -1937,8 +1937,24 @@ async function viewSpecificServerLog(name, path) {
     
     try {
         const data = await apiFetch(`/api/server/${activeLogsServer}/file?path=${encodeURIComponent(path)}`);
-        preEl.textContent = data.content;
-        preEl.scrollTop = 0; // Scroll back to top of new log
+        
+        let content = data.content || "";
+        const lines = content.split('\n');
+        if (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
+        }
+        lines.reverse();
+        preEl.textContent = lines.join('\n');
+        
+        // Wait for rendering to complete so scrollHeight is accurate, then scroll to bottom
+        setTimeout(() => {
+            const container = document.querySelector('.logs-view-container');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+            preEl.scrollTop = preEl.scrollHeight;
+        }, 50);
+        
     } catch (err) {
         preEl.textContent = `Error loading log: ${err.message}`;
         showToast(`Failed to load log file: ${err.message}`, 'error');
