@@ -113,12 +113,19 @@ def is_server_fully_started(server_name):
 def _execute_stop_sequence(server_name, container, send_cmd):
     """
     Core stop sequence:
-    1. Send "stop\n" command to container stdin (if send_cmd is True).
-    2. Wait up to 30 seconds for gracefully exiting.
-    3. Inject dynamic ThreadedAnvilChunkStorage saved log.
-    4. Call container.stop() unconditionally to trigger Docker daemon graceful stop.
+    1. Dynamically set container restart policy to "no" to prevent Docker from restarting it when Java exits.
+    2. Send "stop\n" command to container stdin (if send_cmd is True).
+    3. Wait up to 30 seconds for gracefully exiting.
+    4. Inject dynamic ThreadedAnvilChunkStorage saved log.
+    5. Call container.stop() unconditionally to trigger Docker daemon graceful stop.
     """
     container_name = container.name
+    try:
+        container.update(restart_policy={"Name": "no"})
+        print(f"[Docker] Dynamically set restart policy of '{container_name}' to 'no'.")
+    except Exception as update_err:
+        print(f"[Docker] Failed to update restart policy of '{container_name}' to 'no': {update_err}")
+
     if send_cmd:
         try:
             sock = container.attach_socket(params={'stdin': 1, 'stream': 1})
