@@ -161,11 +161,11 @@ def stop_server(server_name, send_cmd=True):
                 except Exception as write_err:
                     print(f"[Docker] Failed to write saved chunks line to latest.log: {write_err}")
 
-            # Stop/kill container explicitly to mark it as stopped for Docker restart policy
+            # Stop/kill container explicitly to mark it as stopped for Docker restart policy.
+            # We call stop() unconditionally (even if status is not 'running') to guarantee
+            # that Docker registers it as a user-initiated stop and doesn't restart it.
             try:
-                container.reload()
-                if container.status == "running":
-                    container.stop(timeout=10)
+                container.stop(timeout=10)
             except Exception as stop_err:
                 print(f"[Docker] container.stop exception: {stop_err}")
 
