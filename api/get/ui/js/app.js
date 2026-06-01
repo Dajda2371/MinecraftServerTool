@@ -1938,13 +1938,7 @@ async function viewSpecificServerLog(name, path) {
     try {
         const data = await apiFetch(`/api/server/${activeLogsServer}/file?path=${encodeURIComponent(path)}`);
         
-        let content = data.content || "";
-        const lines = content.split('\n');
-        if (lines.length > 0 && lines[lines.length - 1] === '') {
-            lines.pop();
-        }
-        lines.reverse();
-        preEl.textContent = lines.join('\n');
+        preEl.textContent = data.content || "";
         
         // Wait for rendering to complete so scrollHeight is accurate, then scroll to bottom
         setTimeout(() => {
