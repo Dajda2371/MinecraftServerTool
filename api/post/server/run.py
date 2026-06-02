@@ -53,13 +53,14 @@ def configure_server_properties(server_path, port):
                     properties[key.strip()] = value.strip()
 
     # Set required values: Infrared is a connection-level proxy, so each backend
-    # runs online-mode=true and does its own Mojang authentication.
-    properties["online-mode"] = "true"
+    # defaults to online-mode=true and does its own Mojang authentication.
+    if "online-mode" not in properties:
+        properties["online-mode"] = "true"
     properties["server-port"] = str(port)
 
-    # Ensure RCON is enabled for console access
+    # Default RCON configuration
     if "enable-rcon" not in properties:
-        properties["enable-rcon"] = "true"
+        properties["enable-rcon"] = "false"
     if "rcon.password" not in properties:
         properties["rcon.password"] = "admin"
     if "rcon.port" not in properties:

@@ -412,7 +412,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
         server_props = (
             "server-port=25565\n"
-            "enable-rcon=true\n"
+            "enable-rcon=false\n"
             "rcon.password=admin\n"
             "rcon.port=25575\n"
             "online-mode=true\n"
@@ -458,7 +458,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             # Mojang auth (online-mode=true).
             server_props = (
                 "server-port=25565\n"
-                "enable-rcon=true\n"
+                "enable-rcon=false\n"
                 "rcon.password=admin\n"
                 "rcon.port=25575\n"
                 "online-mode=true\n"
@@ -751,7 +751,7 @@ def install_forge(server_name):
     if not os.path.exists(local_props_path):
         server_props = (
             "server-port=25565\n"
-            "enable-rcon=true\n"
+            "enable-rcon=false\n"
             "rcon.password=admin\n"
             "rcon.port=25575\n"
             "online-mode=true\n"

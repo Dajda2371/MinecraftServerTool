@@ -468,19 +468,150 @@
             
             <div class="modal-body quick-settings-modal-body" style="padding-top: var(--space-md);">
                 <form id="quick-settings-form" onsubmit="saveQuickSettings(event)">
-                    <!-- Sections stacked below each other -->
-                    <div class="quick-settings-section" style="margin-bottom: var(--space-xl);">
-                        <h4 style="border-bottom: 1px solid var(--border-default); padding-bottom: var(--space-xs); margin-bottom: var(--space-md); color: var(--accent); font-size: 0.95rem; font-weight: 600;">server.properties</h4>
+                    <!-- server.properties settings grid -->
+                    <div class="qs-sections-grid" style="margin-bottom: var(--space-xl);">
                         
-                        <div class="form-group" style="display: flex; flex-direction: column; gap: var(--space-xs);">
-                            <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
-                                <label for="qs-server-port" style="font-weight: 600; margin-bottom: 0;">server-port</label>
-                                <input type="number" id="qs-server-port" placeholder="25565" required min="1" max="65535" style="width: 120px; text-align: right; font-weight: 600;">
+                        <!-- 1. General & Gameplay -->
+                        <div class="qs-section-card">
+                            <h5>General & Gameplay</h5>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-motd">motd</label>
+                                <input type="text" id="qs-motd" placeholder="A Minecraft Server">
                             </div>
-                            <span class="form-hint" style="color: var(--text-muted); font-size: 0.725rem; margin-top: 4px; line-height: 1.4;">
-                                The internal port the Minecraft server listens on. Changing this automatically updates the primary firewall rule.
-                            </span>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-max-players">max-players</label>
+                                <input type="number" id="qs-max-players" min="1" placeholder="20">
+                            </div>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-difficulty">difficulty</label>
+                                <select id="qs-difficulty">
+                                    <option value="peaceful">peaceful</option>
+                                    <option value="easy">easy</option>
+                                    <option value="normal">normal</option>
+                                    <option value="hard">hard</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-gamemode">gamemode</label>
+                                <select id="qs-gamemode">
+                                    <option value="survival">survival</option>
+                                    <option value="creative">creative</option>
+                                    <option value="adventure">adventure</option>
+                                    <option value="spectator">spectator</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group-toggle">
+                                <label>hardcore</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="qs-hardcore">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="form-group-toggle">
+                                <label>white-list</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="qs-white-list">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="form-group-toggle">
+                                <label>online-mode</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="qs-online-mode">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
+
+                        <!-- 2. World & Generation -->
+                        <div class="qs-section-card">
+                            <h5>World & Generation</h5>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-level-name">level-name</label>
+                                <input type="text" id="qs-level-name" placeholder="world" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens and underscores">
+                            </div>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-level-seed">level-seed</label>
+                                <input type="text" id="qs-level-seed" placeholder="Leave blank for random">
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-level-type">level-type</label>
+                                <select id="qs-level-type">
+                                    <option value="minecraft:normal">normal</option>
+                                    <option value="minecraft:flat">flat</option>
+                                    <option value="minecraft:large_biomes">large biomes</option>
+                                    <option value="minecraft:amplified">amplified</option>
+                                    <option value="minecraft:single_biome_surface">single biome</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-spawn-protection">spawn-protection</label>
+                                <input type="number" id="qs-spawn-protection" min="0" placeholder="16">
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-view-distance">view-distance</label>
+                                <input type="number" id="qs-view-distance" min="3" max="32" placeholder="10">
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-simulation-distance">simulation-distance</label>
+                                <input type="number" id="qs-simulation-distance" min="3" max="32" placeholder="10">
+                            </div>
+                        </div>
+
+                        <!-- 3. Network & Access -->
+                        <div class="qs-section-card">
+                            <h5>Network & Remote Access</h5>
+                            
+                            <div class="form-group-flex">
+                                <label for="qs-server-port">server-port</label>
+                                <input type="number" id="qs-server-port" min="1" max="65535" required placeholder="25565">
+                            </div>
+
+                            <div class="form-group-toggle">
+                                <label>enable-rcon</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="qs-enable-rcon" onchange="checkRconFirewallSuggestion()">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-rcon-port">rcon.port</label>
+                                <input type="number" id="qs-rcon-port" min="1" max="65535" placeholder="25575">
+                            </div>
+
+                            <div class="form-group-flex">
+                                <label for="qs-rcon-password">rcon.password</label>
+                                <input type="text" id="qs-rcon-password" placeholder="admin">
+                            </div>
+
+                            <!-- RCON Firewall Suggestion Alert Box inside network section -->
+                            <div id="qs-rcon-firewall-alert" class="voicechat-alert-box" style="display: none; flex-direction: column; gap: var(--space-sm); padding: var(--space-md); border-color: rgba(234, 179, 8, 0.2); background: rgba(234, 179, 8, 0.05); margin-top: var(--space-sm);">
+                                <div class="voicechat-alert-info" style="align-items: flex-start; gap: var(--space-sm);">
+                                    <div class="voicechat-alert-badge" style="background: var(--yellow-subtle); color: var(--yellow); font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                                        <span>RCON EXPOSED</span>
+                                    </div>
+                                    <p class="voicechat-alert-text" style="font-size: 0.725rem; line-height: 1.3; color: var(--text-secondary); margin: 0;">To allow external clients to connect to RCON, suggest adding a TCP firewall rule for port <strong id="qs-rcon-port-suggest">25575</strong>.</p>
+                                </div>
+                                <button type="button" class="btn btn-warning btn-sm" onclick="quickAddRconRule()" style="width: 100%; justify-content: center; height: 28px; font-size: 0.725rem; padding: 0;">
+                                    Add RCON Firewall Rule
+                                </button>
+                            </div>
+                        </div>
+
                     </div>
                     
                     <div id="quick-settings-voicechat-container" style="display: none; margin-bottom: var(--space-xl);"></div>

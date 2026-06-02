@@ -1706,8 +1706,6 @@ function triggerSettingsModsUpload() {
     }, 200);
 }
 
-let activeQuickSettingsServer = null;
-
 function triggerSettingsQuickSettings() {
     if (!activeSettingsServer) return;
     const name = activeSettingsServer;
@@ -1717,24 +1715,198 @@ function triggerSettingsQuickSettings() {
     }, 200);
 }
 
+let activeQuickSettingsServer = null;
+let loadedQuickSettings = {};
+let hasRconFirewallRule = false;
+
+// Dynamic change tracking and highlight helper
+function checkUnsavedChanges() {
+    let hasChanges = false;
+    const inputs = document.querySelectorAll('[id^="qs-"]');
+    
+    inputs.forEach(input => {
+        // Skip elements inside voicechat container since they are rendered dynamically and handled separately
+        if (input.closest('#quick-settings-voicechat-container')) return;
+        
+        let currentVal = input.type === 'checkbox' ? input.checked : input.value.trim();
+        let originalVal = loadedQuickSettings[input.id];
+        
+        // Normalize comparison
+        if (input.type === 'number' && originalVal !== undefined) {
+            currentVal = parseFloat(currentVal);
+            originalVal = parseFloat(originalVal);
+        }
+        
+        let changed = false;
+        if (input.type === 'checkbox') {
+            changed = currentVal !== !!originalVal;
+        } else {
+            changed = String(currentVal) !== String(originalVal !== undefined && originalVal !== null ? originalVal : '');
+        }
+        
+        const formGroup = input.closest('.form-group-flex') || input.closest('.form-group-toggle') || input.closest('.form-group');
+        const label = formGroup ? formGroup.querySelector('label') : null;
+        
+        if (changed) {
+            hasChanges = true;
+            input.classList.add('qs-input-changed');
+            if (label && !label.querySelector('.qs-unsaved-badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'qs-unsaved-badge';
+                badge.textContent = '● Unsaved';
+                label.appendChild(badge);
+            }
+        } else {
+            input.classList.remove('qs-input-changed');
+            if (label) {
+                const badge = label.querySelector('.qs-unsaved-badge');
+                if (badge) badge.remove();
+            }
+        }
+    });
+    
+    // Highlight Save Button if changes are present
+    const saveBtn = document.getElementById('btn-save-quick-settings');
+    if (hasChanges) {
+        saveBtn.classList.add('btn-primary--glowing');
+    } else {
+        saveBtn.classList.remove('btn-primary--glowing');
+    }
+    
+    // Suggestion display for RCON
+    checkRconFirewallSuggestion();
+}
+
+function checkRconFirewallSuggestion() {
+    const enableRconEl = document.getElementById('qs-enable-rcon');
+    const rconAlertBox = document.getElementById('qs-rcon-firewall-alert');
+    const rconPortInput = document.getElementById('qs-rcon-port');
+    const portLabel = document.getElementById('qs-rcon-port-suggest');
+    
+    if (enableRconEl && enableRconEl.checked) {
+        const rconPortVal = rconPortInput ? rconPortInput.value : 25575;
+        if (portLabel) portLabel.textContent = rconPortVal;
+        
+        if (!hasRconFirewallRule) {
+            rconAlertBox.style.display = 'flex';
+        } else {
+            rconAlertBox.style.display = 'none';
+        }
+    } else {
+        rconAlertBox.style.display = 'none';
+    }
+}
+
+async function quickAddRconRule() {
+    if (!activeQuickSettingsServer) return;
+    const rconPortInput = document.getElementById('qs-rcon-port');
+    const rconPortVal = parseInt(rconPortInput ? rconPortInput.value : 25575);
+    
+    if (isNaN(rconPortVal) || rconPortVal < 1 || rconPortVal > 65535) {
+        showToast('Please enter a valid RCON port.', 'error');
+        return;
+    }
+    
+    try {
+        const payload = {
+            protocol: 'TCP',
+            enabled: true,
+            internal_port: rconPortVal,
+            external_port: rconPortVal,
+            label: 'RCON Access'
+        };
+        
+        await apiFetch(`/api/server/${activeQuickSettingsServer}/firewall/rule`, 'POST', payload);
+        showToast('RCON TCP firewall rule successfully added!', 'success');
+        hasRconFirewallRule = true;
+        checkRconFirewallSuggestion();
+    } catch (err) {
+        showToast(`Failed to add firewall rule: ${err}`, 'error');
+    }
+}
+
 async function showQuickSettingsModal(name) {
     activeQuickSettingsServer = name;
     document.getElementById('quick-settings-server-name').textContent = name;
     document.getElementById('quick-settings-modal-overlay').classList.add('is-visible');
     
     // Clear and set loading status
-    const portInput = document.getElementById('qs-server-port');
-    portInput.value = '';
-    portInput.disabled = true;
+    const allInputs = document.querySelectorAll('#quick-settings-form input, #quick-settings-form select');
+    allInputs.forEach(input => {
+        if (input.closest('#quick-settings-voicechat-container')) return;
+        input.disabled = true;
+        if (input.type === 'checkbox') {
+            input.checked = false;
+        } else {
+            input.value = '';
+        }
+        input.classList.remove('qs-input-changed');
+    });
+    
+    // Clear any previous unsaved badges
+    document.querySelectorAll('.qs-unsaved-badge').forEach(b => b.remove());
+    document.getElementById('btn-save-quick-settings').classList.remove('btn-primary--glowing');
     
     const vcContainer = document.getElementById('quick-settings-voicechat-container');
     vcContainer.style.display = 'none';
     vcContainer.innerHTML = '';
     
+    loadedQuickSettings = {};
+    hasRconFirewallRule = false;
+    
     try {
-        const data = await apiFetch(`/api/server/${name}/quick-settings`);
-        portInput.value = data.server_port || 25565;
-        portInput.disabled = false;
+        // Fetch properties & firewall info in parallel
+        const [data, fwData] = await Promise.all([
+            apiFetch(`/api/server/${name}/quick-settings`),
+            apiFetch(`/api/server/${name}/firewall`)
+        ]);
+        
+        // Check if RCON rule exists in the firewall list
+        const rconPortVal = data.rcon_port || 25575;
+        hasRconFirewallRule = (fwData.rules || []).some(r => r.protocol === 'TCP' && r.internal_port === parseInt(rconPortVal) && r.enabled);
+        
+        // Populate and enable all inputs
+        const fieldMapping = {
+            'qs-server-port': data.server_port,
+            'qs-motd': data.motd,
+            'qs-max-players': data.max_players,
+            'qs-difficulty': data.difficulty,
+            'qs-gamemode': data.gamemode,
+            'qs-hardcore': data.hardcore,
+            'qs-white-list': data.white_list,
+            'qs-online-mode': data.online_mode,
+            'qs-level-name': data.level_name,
+            'qs-level-seed': data.level_seed,
+            'qs-level-type': data.level_type,
+            'qs-spawn-protection': data.spawn_protection,
+            'qs-view-distance': data.view_distance,
+            'qs-simulation-distance': data.simulation_distance,
+            'qs-enable-rcon': data.enable_rcon,
+            'qs-rcon-port': data.rcon_port,
+            'qs-rcon-password': data.rcon_password
+        };
+        
+        Object.keys(fieldMapping).forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                const val = fieldMapping[id];
+                if (el.type === 'checkbox') {
+                    el.checked = !!val;
+                } else {
+                    el.value = val !== undefined && val !== null ? val : '';
+                }
+                el.disabled = false;
+                // Store loaded value
+                loadedQuickSettings[id] = el.type === 'checkbox' ? el.checked : String(el.value).trim();
+            }
+        });
+        
+        // Register input change event listeners
+        const form = document.getElementById('quick-settings-form');
+        form.removeEventListener('input', checkUnsavedChanges);
+        form.removeEventListener('change', checkUnsavedChanges);
+        form.addEventListener('input', checkUnsavedChanges);
+        form.addEventListener('change', checkUnsavedChanges);
         
         // Render Voice Chat Properties if detected
         if (data.voicechat && data.voicechat.detected && data.voicechat.properties) {
@@ -1752,8 +1924,6 @@ async function showQuickSettingsModal(name) {
                 const prop = props[key];
                 const val = prop.value;
                 const desc = prop.description || '';
-                
-                // Format description cleanly
                 const descHtml = desc.split('\n').map(line => escapeHtml(line)).join('<br>');
                 const isBool = val === 'true' || val === 'false';
                 
@@ -1795,6 +1965,9 @@ async function showQuickSettingsModal(name) {
             html += `</div>`;
             vcContainer.innerHTML = html;
         }
+        
+        // Initial suggestion check
+        checkRconFirewallSuggestion();
     } catch (err) {
         showToast(`Failed to load Quick Settings: ${err}`, 'error');
         hideQuickSettingsModal();
@@ -1811,12 +1984,40 @@ async function saveQuickSettings(e) {
     e.preventDefault();
     if (!activeQuickSettingsServer) return;
     
-    const portInput = document.getElementById('qs-server-port');
-    const server_port = parseInt(portInput.value);
-    
+    // Gather all fields
+    const server_port = parseInt(document.getElementById('qs-server-port').value);
+    const motd = document.getElementById('qs-motd').value;
+    const max_players = parseInt(document.getElementById('qs-max-players').value);
+    const difficulty = document.getElementById('qs-difficulty').value;
+    const gamemode = document.getElementById('qs-gamemode').value;
+    const hardcore = document.getElementById('qs-hardcore').checked;
+    const white_list = document.getElementById('qs-white-list').checked;
+    const online_mode = document.getElementById('qs-online-mode').checked;
+    const level_name = document.getElementById('qs-level-name').value;
+    const level_seed = document.getElementById('qs-level-seed').value.trim();
+    const level_type = document.getElementById('qs-level-type').value;
+    const spawn_protection = parseInt(document.getElementById('qs-spawn-protection').value);
+    const view_distance = parseInt(document.getElementById('qs-view-distance').value);
+    const simulation_distance = parseInt(document.getElementById('qs-simulation-distance').value);
+    const enable_rcon = document.getElementById('qs-enable-rcon').checked;
+    const rcon_port = parseInt(document.getElementById('qs-rcon-port').value);
+    const rcon_password = document.getElementById('qs-rcon-password').value;
+
     if (isNaN(server_port) || server_port < 1 || server_port > 65535) {
         showToast('Please enter a valid port between 1 and 65535.', 'error');
         return;
+    }
+    
+    // Alert user if seed changed
+    const originalSeed = loadedQuickSettings['qs-level-seed'];
+    if (originalSeed !== undefined && level_seed !== originalSeed) {
+        const confirmed = confirm(
+            "⚠️ WARNING: Changing the seed will permanently delete the server's existing world folders (" +
+            level_name + ", " + level_name + "_nether, " + level_name + "_the_end) to let Minecraft generate a brand new world.\n\n" +
+            "This action is completely permanent and cannot be undone!\n\n" +
+            "Do you want to proceed and delete the world folders?"
+        );
+        if (!confirmed) return;
     }
     
     // Gather Voice Chat settings if container is visible
@@ -1847,6 +2048,22 @@ async function saveQuickSettings(e) {
     try {
         const payload = {
             server_port,
+            motd,
+            max_players,
+            difficulty,
+            gamemode,
+            hardcore,
+            white_list,
+            online_mode,
+            level_name,
+            level_seed,
+            level_type,
+            spawn_protection,
+            view_distance,
+            simulation_distance,
+            enable_rcon,
+            rcon_port,
+            rcon_password,
             voicechat: voicechatPayload
         };
         await apiFetch(`/api/server/${activeQuickSettingsServer}/quick-settings`, 'PUT', payload);

@@ -214,6 +214,22 @@ class FirewallRuleUpdate(BaseModel):
 
 class QuickSettingsRequest(BaseModel):
     server_port: int
+    difficulty: Optional[str] = None
+    enable_rcon: Optional[bool] = None
+    gamemode: Optional[str] = None
+    hardcore: Optional[bool] = None
+    level_name: Optional[str] = None
+    level_seed: Optional[str] = None
+    level_type: Optional[str] = None
+    max_players: Optional[int] = None
+    motd: Optional[str] = None
+    online_mode: Optional[bool] = None
+    rcon_password: Optional[str] = None
+    rcon_port: Optional[int] = None
+    simulation_distance: Optional[int] = None
+    spawn_protection: Optional[int] = None
+    view_distance: Optional[int] = None
+    white_list: Optional[bool] = None
     voicechat: Optional[dict] = None
 
 # ============================================================================
@@ -1529,13 +1545,66 @@ async def get_server_quick_settings(name: str, current_user: str = Depends(get_c
     if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
-    server_port = api.db.get_server_port_from_properties(name)
+    import os
+    server_local_path = os.path.abspath(os.path.join("data", "servers", name))
+    props_path = os.path.join(server_local_path, "server.properties")
     
+    props_dict = {}
+    if os.path.exists(props_path):
+        try:
+            with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if "=" in stripped and not stripped.startswith("#"):
+                        key, val = stripped.split("=", 1)
+                        props_dict[key.strip()] = val.strip()
+        except Exception as e:
+            print(f"[QuickSettings] Error reading server.properties: {e}")
+
+    SUPPORTED_KEYS = {
+        "difficulty": "easy",
+        "enable-rcon": "false",
+        "gamemode": "survival",
+        "hardcore": "false",
+        "level-name": "world",
+        "level-seed": "",
+        "level-type": "minecraft:normal",
+        "max-players": "20",
+        "motd": "A Minecraft Server",
+        "online-mode": "true",
+        "rcon.password": "admin",
+        "rcon.port": "25575",
+        "server-port": "25565",
+        "simulation-distance": "10",
+        "spawn-protection": "16",
+        "view-distance": "10",
+        "white-list": "false"
+    }
+
+    settings = {}
+    for key, def_val in SUPPORTED_KEYS.items():
+        val_str = props_dict.get(key, def_val)
+        api_key = key.replace("-", "_").replace(".", "_")
+        
+        # Type conversions
+        if key in ("enable-rcon", "hardcore", "online-mode", "white-list"):
+            settings[api_key] = val_str.lower() == "true"
+        elif key in ("max-players", "rcon.port", "server-port", "simulation-distance", "spawn-protection", "view-distance"):
+            try:
+                settings[api_key] = int(val_str)
+            except ValueError:
+                try:
+                    settings[api_key] = int(def_val)
+                except ValueError:
+                    settings[api_key] = 0
+        else:
+            settings[api_key] = val_str
+
     # Check voicechat properties
     vc_data = api.voicechat.parse_voicechat_properties(name)
     
     return {
-        "server_port": server_port,
+        **settings,
         "voicechat": vc_data
     }
 
@@ -1549,38 +1618,106 @@ async def update_server_quick_settings(name: str, data: QuickSettingsRequest, cu
     if not (1 <= server_port <= 65535):
         raise HTTPException(status_code=400, detail="Server port must be between 1 and 65535")
         
+    PROPERTY_MAPPING = {
+        "difficulty": "difficulty",
+        "enable_rcon": "enable-rcon",
+        "gamemode": "gamemode",
+        "hardcore": "hardcore",
+        "level_name": "level-name",
+        "level_seed": "level-seed",
+        "level_type": "level-type",
+        "max_players": "max-players",
+        "motd": "motd",
+        "online_mode": "online-mode",
+        "rcon_password": "rcon.password",
+        "rcon_port": "rcon.port",
+        "server_port": "server-port",
+        "simulation_distance": "simulation-distance",
+        "spawn_protection": "spawn-protection",
+        "view_distance": "view-distance",
+        "white_list": "white-list"
+    }
+
+    # Extract all properties from payload
+    new_props = {}
+    for attr, prop_key in PROPERTY_MAPPING.items():
+        val = getattr(data, attr)
+        if val is not None:
+            if isinstance(val, bool):
+                new_props[prop_key] = "true" if val else "false"
+            else:
+                new_props[prop_key] = str(val)
+
     # 1. Write to server.properties
     try:
         import os
+        import shutil
         server_local_path = os.path.abspath(os.path.join("data", "servers", name))
         props_path = os.path.join(server_local_path, "server.properties")
         os.makedirs(server_local_path, exist_ok=True)
         
-        lines = []
-        port_updated = False
+        # Read existing properties to check if seed changed and get level-name
+        old_seed = ""
+        old_level_name = "world"
         
         if os.path.exists(props_path):
-            with open(props_path, "r", encoding="utf-8") as f:
+            with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if "=" in stripped and not stripped.startswith("#"):
+                        k, v = stripped.split("=", 1)
+                        k = k.strip()
+                        if k == "level-seed":
+                            old_seed = v.strip()
+                        elif k == "level-name":
+                            old_level_name = v.strip()
+
+        # Check if the seed has changed
+        if "level-seed" in new_props:
+            new_seed = new_props["level-seed"].strip()
+            if old_seed != new_seed:
+                # Delete all world folders!
+                print(f"[QuickSettings] Seed changed for '{name}' (from '{old_seed}' to '{new_seed}'). Deleting world folders...")
+                for folder in [old_level_name, f"{old_level_name}_nether", f"{old_level_name}_the_end"]:
+                    world_folder_path = os.path.join(server_local_path, folder)
+                    if os.path.exists(world_folder_path):
+                        try:
+                            if os.path.isdir(world_folder_path):
+                                shutil.rmtree(world_folder_path)
+                                print(f"[QuickSettings] Deleted folder: {world_folder_path}")
+                            else:
+                                os.remove(world_folder_path)
+                        except Exception as delete_err:
+                            print(f"[QuickSettings] Error deleting world path {world_folder_path}: {delete_err}")
+
+        # Re-write the properties file preserving comments
+        lines = []
+        if os.path.exists(props_path):
+            with open(props_path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
                 
         new_lines = []
+        updated_keys = set()
+        
         for line in lines:
             stripped = line.strip()
             if "=" in stripped and not stripped.startswith("#"):
                 key, val = stripped.split("=", 1)
                 key = key.strip()
-                if key == "server-port":
+                if key in new_props:
                     suffix = "\n" if not line.endswith("\r\n") else "\r\n"
-                    new_lines.append(f"server-port={server_port}{suffix}")
-                    port_updated = True
+                    new_lines.append(f"{key}={new_props[key]}{suffix}")
+                    updated_keys.add(key)
                 else:
                     new_lines.append(line)
             else:
                 new_lines.append(line)
                 
-        if not port_updated:
-            new_lines.append(f"server-port={server_port}\n")
-            
+        # Append any new keys that weren't in the original file
+        for key, val in new_props.items():
+            if key not in updated_keys:
+                new_lines.append(f"{key}={val}\n")
+                
         with open(props_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
             
