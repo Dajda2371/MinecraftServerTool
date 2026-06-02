@@ -2068,15 +2068,42 @@ input:checked + .toggle-slider:before {
 
 .form-group-flex input,
 .form-group-flex select {
-    width: 160px !important;
+    width: 170px !important;
     text-align: right;
     font-weight: 600;
-    padding: 6px 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    outline: none;
+    transition: all var(--duration-fast) var(--ease);
+}
+
+.form-group-flex input:hover,
+.form-group-flex select:hover {
+    border-color: var(--border-hover);
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.form-group-flex input:focus,
+.form-group-flex select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+    background: rgba(0, 0, 0, 0.45);
 }
 
 .form-group-flex select {
     text-align-last: right;
-    padding-right: 24px;
+    padding-right: 28px !important;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239090a8' stroke-width='2.5' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
 }
 
 /* Toggle row style form group inside card section */
