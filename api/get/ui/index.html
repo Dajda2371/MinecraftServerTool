@@ -465,9 +465,14 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
-            
             <div class="modal-body quick-settings-modal-body" style="padding-top: var(--space-md);">
                 <form id="quick-settings-form" onsubmit="saveQuickSettings(event)">
+                    <!-- Action buttons at the top of the form -->
+                    <div class="form-actions" style="margin-top: 0; margin-bottom: var(--space-xl); display: flex; justify-content: flex-end; gap: var(--space-md); padding-bottom: var(--space-md); border-bottom: 1px solid var(--border-subtle);">
+                        <button type="button" class="btn btn-ghost" onclick="hideQuickSettingsModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="btn-save-quick-settings">Save Settings</button>
+                    </div>
+                    
                     <!-- server.properties settings grid -->
                     <div class="qs-sections-grid" style="margin-bottom: var(--space-xl);">
                         
@@ -615,11 +620,6 @@
                     </div>
                     
                     <div id="quick-settings-voicechat-container" style="display: none; margin-bottom: var(--space-xl);"></div>
-                    
-                    <div class="form-actions" style="margin-top: var(--space-lg); display: flex; justify-content: flex-end; gap: var(--space-md); padding-bottom: 0;">
-                        <button type="button" class="btn btn-ghost" onclick="hideQuickSettingsModal()">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="btn-save-quick-settings">Save Settings</button>
-                    </div>
                 </form>
             </div>
         </div>
