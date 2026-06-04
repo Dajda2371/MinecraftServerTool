@@ -1,0 +1,71 @@
+name: Release
+
+# Build and push the project's Docker images to GHCR whenever a version
+# tag (e.g. v1.0.0) is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Management web app (Dockerfile) ---
+      - name: Metadata (mc-tool)
+        id: meta-tool
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push mc-tool
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta-tool.outputs.tags }}
+          labels: ${{ steps.meta-tool.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Spawned-server base image (Dockerfile.server) ---
+      - name: Metadata (mc-server-base)
+        id: meta-base
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/mc-server-base
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push mc-server-base
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.server
+          push: true
+          tags: ${{ steps.meta-base.outputs.tags }}
+          labels: ${{ steps.meta-base.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

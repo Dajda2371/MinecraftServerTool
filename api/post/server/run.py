@@ -22,7 +22,7 @@ DOCKER_NETWORK = "mc-net"
 # Default server image — built from Dockerfile.server via the
 # mc-server-base compose service. Ships with gosu + our entrypoint that
 # chowns /data and drops to UID 1000 before exec'ing Java.
-DEFAULT_SERVER_IMAGE = "mc-server-base:latest"
+DEFAULT_SERVER_IMAGE = os.environ.get("SERVER_BASE_IMAGE", "mc-server-base:latest")
 
 
 def ensure_network(client):
