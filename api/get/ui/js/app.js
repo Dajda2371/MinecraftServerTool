@@ -2693,6 +2693,8 @@ function switchAdminTab(tabId) {
         loadUsersList();
     } else if (tabId === 'admin-tab-proxy') {
         loadProxySettingsView();
+    } else if (tabId === 'admin-tab-system') {
+        loadSystemHttpsSettings();
     }
 }
 
@@ -2802,5 +2804,97 @@ function showUsersModal() {
 
 function hideUsersModal() {
     closeAdminSettingsModal();
+}
+
+let sysHttpsPollingTimeout = null;
+
+async function loadSystemHttpsSettings() {
+    // Clear any active polling timeout to avoid multiples
+    if (sysHttpsPollingTimeout) {
+        clearTimeout(sysHttpsPollingTimeout);
+        sysHttpsPollingTimeout = null;
+    }
+
+    // Ensure we are currently in the System Configuration tab to avoid background polling loops
+    const activeTab = document.getElementById('admin-tab-system-pane');
+    if (!activeTab || !activeTab.classList.contains('is-active')) return;
+
+    try {
+        const data = await apiFetch('/api/system/https');
+        
+        const enabledCheckbox = document.getElementById('sys-https-enabled');
+        const domainInput = document.getElementById('sys-https-domain');
+        const statusContainer = document.getElementById('sys-https-status-container');
+        const statusBadge = document.getElementById('sys-https-status-badge');
+        const statusText = document.getElementById('sys-https-status-text');
+        const statusDetail = document.getElementById('sys-https-status-detail');
+
+        const isEnabled = data.status === 'enabling' || data.status === 'enabled';
+        enabledCheckbox.checked = isEnabled;
+        domainInput.value = data.domain || '';
+
+        // Display status details
+        if (data.status === 'disabled') {
+            statusContainer.style.display = 'none';
+        } else {
+            statusContainer.style.display = 'block';
+            statusBadge.className = 'card-status-badge';
+            
+            if (data.status === 'enabling') {
+                statusBadge.classList.add('badge-unknown'); // Yellow dot
+                statusText.textContent = 'Acquiring SSL Certificate...';
+                statusDetail.innerHTML = '<span class="spinner" style="display:inline-block; vertical-align:middle; margin-right:6px;"></span>Let\'s Encrypt verification is currently running. Nginx is starting and verifying domain ownership. This may take up to a minute...';
+                
+                // Poll again in 3 seconds to update the UI once certbot finishes
+                sysHttpsPollingTimeout = setTimeout(loadSystemHttpsSettings, 3000);
+            } else if (data.status === 'enabled') {
+                statusBadge.classList.add('badge-running'); // Green dot
+                statusText.textContent = 'SSL/TLS Active';
+                
+                const currentProtocol = window.location.protocol;
+                if (currentProtocol === 'http:') {
+                    statusDetail.innerHTML = `<strong style="color:var(--green);">HTTPS enabled successfully!</strong> Your server is now secured. Redirecting you to secure HTTPS interface at <a href="https://${data.domain}" style="color:var(--accent-hover); text-decoration:underline;">https://${data.domain}</a> in 3 seconds...`;
+                    setTimeout(() => {
+                        window.location.href = `https://${data.domain}`;
+                    }, 3000);
+                } else {
+                    statusDetail.innerHTML = `SSL certificate is installed successfully and running. Your connection is fully secure.`;
+                }
+            } else if (data.status === 'failed') {
+                statusBadge.classList.add('badge-stopped'); // Red dot
+                statusText.textContent = 'Setup Failed';
+                statusDetail.innerHTML = `<span style="color:var(--red); font-weight:600; display:block; margin-bottom:4px;">Error details:</span><pre style="background:var(--bg-primary); border:1px solid var(--border-default); border-radius:4px; padding:6px; color:var(--text-secondary); font-family:var(--font-mono); font-size:0.75rem; white-space:pre-wrap; max-height:150px; overflow-y:auto;">${escapeHtml(data.error)}</pre>`;
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load HTTPS settings:', err);
+    }
+}
+
+async function saveSystemHttpsSettings() {
+    const enabled = document.getElementById('sys-https-enabled').checked;
+    const domain = document.getElementById('sys-https-domain').value.trim();
+
+    if (enabled && !domain) {
+        showToast('Please enter a domain name to enable HTTPS.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btn-save-https-settings');
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = 'Saving Settings...';
+
+    try {
+        showToast('Saving System HTTPS configuration...', 'info');
+        const res = await apiFetch('/api/system/https', 'POST', { enabled, domain });
+        showToast(res.message || 'Settings saved successfully!', 'success');
+        await loadSystemHttpsSettings();
+    } catch (err) {
+        showToast(`Failed to save settings: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+    }
 }
 

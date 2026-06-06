@@ -127,6 +127,13 @@ def init_db():
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_firewall_rules_server ON firewall_rules(server_name)")
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -643,4 +650,31 @@ def get_server_port_from_properties(server_name: str) -> int:
         
     conn.close()
     return port
+
+
+def get_setting(key: str, default: str = None) -> str:
+    """Retrieve a setting value by key."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = %s", (key,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return row[0]
+    return default
+
+
+def set_setting(key: str, value: str) -> None:
+    """Save or update a setting key-value pair."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO settings (key, value) VALUES (%s, %s) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (key, value)
+    )
+    conn.commit()
+    conn.close()
 

@@ -29,6 +29,7 @@ import api.post.user.reset_password
 import api.post.user.create
 import api.post.user.delete
 import api.voicechat
+import api.https
 
 # Define the absolute directory to serve frontend files from
 frontend_dir = Path(__file__).parent.resolve() / "get" / "ui"
@@ -88,6 +89,12 @@ async def lifespan(app: FastAPI):
     
     # Initialize the database on startup
     api.db.init_db()
+    
+    # Check HTTPS status and verify Nginx is running
+    try:
+        threading.Thread(target=api.https.check_https_on_startup, daemon=True).start()
+    except Exception as e:
+        print(f"[Startup Warning] Could not verify HTTPS status: {e}")
     
     # Generate Infrared config files
     try:
@@ -197,6 +204,10 @@ class ResetPasswordRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
+
+class HttpsSettingsRequest(BaseModel):
+    enabled: bool
+    domain: str = ""
 
 class CommandRequest(BaseModel):
     name: str
@@ -313,6 +324,25 @@ async def user_change_password(data: ChangePasswordRequest, current_user: str = 
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "Password changed successfully"}
+
+# ============================================================================
+# System Endpoints (Admin Only)
+# ============================================================================
+@fastapi_app.get("/api/system/https")
+async def get_system_https(admin_user: str = Depends(get_admin_user)):
+    return api.https.get_https_status()
+
+@fastapi_app.post("/api/system/https")
+async def set_system_https(data: HttpsSettingsRequest, admin_user: str = Depends(get_admin_user)):
+    if data.enabled:
+        domain = data.domain.strip()
+        if not domain:
+            raise HTTPException(status_code=400, detail="Domain name is required to enable HTTPS")
+        api.https.enable_https_async(domain)
+        return {"message": "HTTPS enabling workflow started in background."}
+    else:
+        api.https.disable_https()
+        return {"message": "HTTPS reverse proxy disabled successfully."}
 
 # ============================================================================
 # Server Endpoints

@@ -973,6 +973,24 @@
                         <input type="text" id="sys-https-domain" placeholder="e.g. mc.example.com">
                         <span class="form-hint">Specify the domain name that points to this server's management interface.</span>
                     </div>
+
+                    <!-- HTTPS Certificate and Container Status Details -->
+                    <div id="sys-https-status-container" style="display: none; max-width: 450px; margin-top: var(--space-md); margin-bottom: var(--space-md); padding: var(--space-md); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: rgba(255,255,255,0.01);">
+                        <div style="display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs);">
+                            <span class="detail-label" style="font-size: 0.7rem; color: var(--text-muted);">Status:</span>
+                            <span id="sys-https-status-badge" class="card-status-badge">
+                                <span class="badge-dot"></span>
+                                <span id="sys-https-status-text">Checking...</span>
+                            </span>
+                        </div>
+                        <div id="sys-https-status-detail" style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.4; margin-top: 4px;">
+                            <!-- Detail logs or errors go here -->
+                        </div>
+                    </div>
+
+                    <button id="btn-save-https-settings" class="btn btn-primary" onclick="saveSystemHttpsSettings()" style="margin-top: var(--space-md);">
+                        Save HTTPS Settings
+                    </button>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: 0; padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
