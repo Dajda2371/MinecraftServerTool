@@ -203,6 +203,7 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 class ChangePasswordRequest(BaseModel):
+    current_password: str
     new_password: str
 
 class HttpsSettingsRequest(BaseModel):
@@ -316,9 +317,14 @@ async def user_reset(data: ResetPasswordRequest, admin_user: str = Depends(get_a
 
 @fastapi_app.post("/api/user/change-password")
 async def user_change_password(data: ChangePasswordRequest, current_user: str = Depends(get_current_user)):
+    current_password = data.current_password
     new_password = data.new_password.strip()
+    
     if not new_password:
-        raise HTTPException(status_code=400, detail="Password cannot be empty")
+        raise HTTPException(status_code=400, detail="New password cannot be empty")
+        
+    if not api.db.verify_user_password(current_user, current_password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
     
     success = api.db.set_user_password(current_user, new_password)
     if not success:

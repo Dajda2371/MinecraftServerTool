@@ -371,7 +371,7 @@ def add_user(username):
     conn = _connect()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO users (username) VALUES (%s)", (username,))
+        cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, 'password'))
         conn.commit()
         return True
     except pg_errors.UniqueViolation:

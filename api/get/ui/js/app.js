@@ -2700,6 +2700,7 @@ function switchAdminTab(tabId) {
 
 async function submitChangePassword(e) {
     e.preventDefault();
+    const currentPass = document.getElementById('change-pwd-current').value;
     const newPass = document.getElementById('change-pwd-new').value;
     const confirmPass = document.getElementById('change-pwd-confirm').value;
 
@@ -2714,7 +2715,10 @@ async function submitChangePassword(e) {
     btn.textContent = 'Updating...';
 
     try {
-        await apiFetch('/api/user/change-password', 'POST', { new_password: newPass });
+        await apiFetch('/api/user/change-password', 'POST', {
+            current_password: currentPass,
+            new_password: newPass
+        });
         showToast("Password updated successfully!", "success");
         document.getElementById('change-password-form').reset();
     } catch (err) {
