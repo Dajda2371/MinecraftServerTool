@@ -426,13 +426,13 @@ async def create_server(data: CreateServerRequest, current_user: str = Depends(g
     if not name or not version:
         raise HTTPException(status_code=400, detail="name and version are required")
 
-    # Only admin can create servers for other owners
-    if current_user != 'admin' and owner != current_user:
-        raise HTTPException(status_code=403, detail="Access denied: Cannot create server for another user")
-
     # Force owner to current user if not admin
     if current_user != 'admin':
         owner = current_user
+
+    # Only admin can create servers for other owners
+    if current_user != 'admin' and owner != current_user:
+        raise HTTPException(status_code=403, detail="Access denied: Cannot create server for another user")
 
     memory_mb = data.memory_mb
     if memory_mb < 512:
