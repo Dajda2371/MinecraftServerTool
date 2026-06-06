@@ -2168,3 +2168,136 @@ input:checked + .toggle-slider:before {
     background: #f59e0b !important;
     box-shadow: 0 0 24px rgba(234, 179, 8, 0.65) !important;
 }
+
+/* ============================================================================
+   User Dropdown & Settings Modal Styles
+   ============================================================================ */
+
+/* User Rollout Menu */
+.user-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    outline: none;
+}
+
+.user-menu-trigger:focus-visible {
+    outline: 2px solid var(--accent);
+}
+
+.user-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 200px;
+    background: var(--bg-modal);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: var(--space-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+    pointer-events: none;
+    transition: opacity var(--duration-fast) var(--ease), transform var(--duration-fast) var(--ease);
+}
+
+.user-dropdown-menu.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.user-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: all var(--duration-fast) var(--ease);
+    outline: none;
+    text-decoration: none;
+}
+
+.user-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.user-dropdown-item:focus-visible {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+/* Settings Modals (Almost Fullscreen) */
+.modal--fullscreen {
+    max-width: 95vw;
+    width: 1200px;
+    height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-xl);
+}
+
+.modal--fullscreen .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 0;
+    padding: var(--space-md) 0;
+}
+
+/* Premium Blank State for Settings */
+.settings-placeholder-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 300px;
+    color: var(--text-secondary);
+    text-align: center;
+    animation: fade-in 0.4s var(--ease);
+}
+
+.settings-placeholder-icon {
+    margin-bottom: var(--space-lg);
+    opacity: 0.25;
+    color: var(--accent);
+    animation: pulse-icon 3s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-icon {
+    0% { transform: scale(1); opacity: 0.25; filter: drop-shadow(0 0 0px var(--accent-glow)); }
+    100% { transform: scale(1.05); opacity: 0.45; filter: drop-shadow(0 0 15px var(--accent-glow)); }
+}
+
+.settings-placeholder-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-sm);
+}
+
+.settings-placeholder-desc {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    max-width: 400px;
+}

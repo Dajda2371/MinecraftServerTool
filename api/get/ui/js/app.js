@@ -820,6 +820,8 @@ document.addEventListener('keydown', (e) => {
         hideServerLogsModal();
         hideFirewallModal();
         hideModsModal();
+        closeUserSettingsModal();
+        closeAdminSettingsModal();
     }
     // Ctrl+N to create server
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
@@ -2569,5 +2571,49 @@ async function confirmApplyFirewall() {
         btn.disabled = false;
         btn.textContent = oldText;
     }
+}
+
+// --- User Rollout Menu & Settings Modals ---
+function toggleUserMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('user-dropdown-menu');
+    menu.classList.toggle('is-visible');
+}
+
+// Click outside dropdown to close it
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('user-dropdown-menu');
+    const trigger = document.getElementById('user-menu-trigger');
+    if (menu && menu.classList.contains('is-visible')) {
+        const isClickInsideMenu = menu.contains(e.target);
+        const isClickInsideTrigger = trigger && trigger.contains(e.target);
+        if (!isClickInsideMenu && !isClickInsideTrigger) {
+            menu.classList.remove('is-visible');
+        }
+    }
+});
+
+function openUserSettingsModal() {
+    // Hide rollout menu first
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.remove('is-visible');
+
+    document.getElementById('user-settings-modal-overlay').classList.add('is-visible');
+}
+
+function closeUserSettingsModal() {
+    document.getElementById('user-settings-modal-overlay').classList.remove('is-visible');
+}
+
+function openAdminSettingsModal() {
+    // Hide rollout menu first
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.remove('is-visible');
+
+    document.getElementById('admin-settings-modal-overlay').classList.add('is-visible');
+}
+
+function closeAdminSettingsModal() {
+    document.getElementById('admin-settings-modal-overlay').classList.remove('is-visible');
 }
 
