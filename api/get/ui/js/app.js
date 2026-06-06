@@ -59,6 +59,7 @@ socket.on('proxy_routes_updated', async () => {
     console.log('Real-time proxy status update received');
     if (currentUser && currentUser.username === 'admin') {
         await loadProxyStatus();
+        await loadProxyRoutesSettings();
     }
 });
 
@@ -166,26 +167,67 @@ async function loadServers() {
 async function loadProxyStatus() {
     try {
         const data = await apiFetch('/api/proxy/status');
+        
+        // Header badge
         const badge = document.getElementById('proxy-status');
-        const text = badge.querySelector('.status-text');
+        if (badge) {
+            const text = badge.querySelector('.status-text');
+            badge.classList.remove('is-running', 'is-stopped');
+            if (data.running) {
+                badge.classList.add('is-running');
+                if (text) text.textContent = 'Proxy Running';
+            } else {
+                badge.classList.add('is-stopped');
+                if (text) text.textContent = 'Proxy Stopped';
+            }
+        }
+        
+        // Settings badge
+        const settingsBadge = document.getElementById('proxy-status-settings');
+        if (settingsBadge) {
+            const settingsText = settingsBadge.querySelector('.status-text');
+            settingsBadge.classList.remove('is-running', 'is-stopped');
+            if (data.running) {
+                settingsBadge.classList.add('is-running');
+                if (settingsText) settingsText.textContent = 'Proxy Running';
+            } else {
+                settingsBadge.classList.add('is-stopped');
+                if (settingsText) settingsText.textContent = 'Proxy Stopped';
+            }
+        }
+        
+        // Settings toggle button
+        const settingsBtn = document.getElementById('btn-proxy-toggle-settings');
+        if (settingsBtn) {
+            if (data.running) {
+                settingsBtn.className = 'btn btn-sm btn-warning';
+                settingsBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    Stop Proxy
+                `;
+            } else {
+                settingsBtn.className = 'btn btn-sm btn-success';
+                settingsBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Start Proxy
+                `;
+            }
+        }
+        
+        // Backward-compatible header toggle button
         const btn = document.getElementById('btn-proxy-toggle');
-
-        badge.classList.remove('is-running', 'is-stopped');
-
-        if (data.running) {
-            badge.classList.add('is-running');
-            text.textContent = 'Proxy Running';
-            btn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                Stop
-            `;
-        } else {
-            badge.classList.add('is-stopped');
-            text.textContent = 'Proxy Stopped';
-            btn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Start
-            `;
+        if (btn) {
+            if (data.running) {
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    Stop
+                `;
+            } else {
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Start
+                `;
+            }
         }
     } catch (err) {
         console.error('Failed to load proxy status:', err);
@@ -532,9 +574,9 @@ async function updateHostname(e) {
     }
 }
 
-// --- Proxy Toggle ---
 async function toggleProxy() {
-    const badge = document.getElementById('proxy-status');
+    const badge = document.getElementById('proxy-status-settings') || document.getElementById('proxy-status');
+    if (!badge) return;
     const isRunning = badge.classList.contains('is-running');
 
     try {
@@ -548,6 +590,7 @@ async function toggleProxy() {
             showToast('Proxy started', 'success');
         }
         await loadProxyStatus();
+        await loadProxyRoutesSettings();
     } catch (err) {
         showToast(`Proxy error: ${err.message}`, 'error');
     }
@@ -2599,6 +2642,7 @@ function openUserSettingsModal() {
     if (menu) menu.classList.remove('is-visible');
 
     document.getElementById('user-settings-modal-overlay').classList.add('is-visible');
+    switchUserTab('user-tab-account');
 }
 
 function closeUserSettingsModal() {
@@ -2611,9 +2655,152 @@ function openAdminSettingsModal() {
     if (menu) menu.classList.remove('is-visible');
 
     document.getElementById('admin-settings-modal-overlay').classList.add('is-visible');
+    switchAdminTab('admin-tab-users');
 }
 
 function closeAdminSettingsModal() {
     document.getElementById('admin-settings-modal-overlay').classList.remove('is-visible');
+}
+
+function switchUserTab(tabId) {
+    document.querySelectorAll('#user-settings-modal-overlay .settings-content-pane').forEach(el => {
+        el.classList.remove('is-active');
+    });
+    document.querySelectorAll('#user-settings-modal-overlay .settings-sidebar-btn').forEach(el => {
+        el.classList.remove('is-active');
+    });
+
+    const targetPane = document.getElementById(tabId + '-pane');
+    const targetBtn = document.getElementById(tabId + '-btn');
+    if (targetPane) targetPane.classList.add('is-active');
+    if (targetBtn) targetBtn.classList.add('is-active');
+}
+
+function switchAdminTab(tabId) {
+    document.querySelectorAll('#admin-settings-modal-overlay .settings-content-pane').forEach(el => {
+        el.classList.remove('is-active');
+    });
+    document.querySelectorAll('#admin-settings-modal-overlay .settings-sidebar-btn').forEach(el => {
+        el.classList.remove('is-active');
+    });
+
+    const targetPane = document.getElementById(tabId + '-pane');
+    const targetBtn = document.getElementById(tabId + '-btn');
+    if (targetPane) targetPane.classList.add('is-active');
+    if (targetBtn) targetBtn.classList.add('is-active');
+
+    if (tabId === 'admin-tab-users') {
+        loadUsersList();
+    } else if (tabId === 'admin-tab-proxy') {
+        loadProxySettingsView();
+    }
+}
+
+async function submitChangePassword(e) {
+    e.preventDefault();
+    const newPass = document.getElementById('change-pwd-new').value;
+    const confirmPass = document.getElementById('change-pwd-confirm').value;
+
+    if (newPass !== confirmPass) {
+        showToast("New passwords do not match", "error");
+        return;
+    }
+
+    const btn = document.getElementById('btn-submit-change-pwd');
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = 'Updating...';
+
+    try {
+        await apiFetch('/api/user/change-password', 'POST', { new_password: newPass });
+        showToast("Password updated successfully!", "success");
+        document.getElementById('change-password-form').reset();
+    } catch (err) {
+        showToast(`Failed to update password: ${err.message}`, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+    }
+}
+
+async function loadProxySettingsView() {
+    await loadProxyStatus();
+    await loadProxyRoutesSettings();
+}
+
+async function loadProxyRoutesSettings() {
+    const list = document.getElementById('proxy-routes-list-settings');
+    if (!list) return;
+
+    try {
+        const data = await apiFetch('/api/proxy/routes');
+        const routes = data.routes || [];
+
+        if (routes.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state" style="padding: var(--space-xl) 0;">
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">No active proxy routes found.</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.innerHTML = routes.map((r, i) => `
+            <div class="route-card" style="margin-bottom: var(--space-md); padding: var(--space-md); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: rgba(255,255,255,0.01);">
+                <div class="route-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm); border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+                    <span class="route-file" style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent-hover); font-weight: 500;">${escapeHtml(r.file)}</span>
+                    <span class="card-status-badge badge-running" style="font-size: 0.6rem; padding: 2px 8px;">
+                        <span class="badge-dot"></span>
+                        active
+                    </span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: var(--space-sm);">
+                    <div>
+                        <span class="detail-label" style="font-size: 0.65rem; color: var(--text-muted); display: block;">Domain</span>
+                        <span class="detail-value" style="font-size: 0.8rem; font-family: var(--font-mono); color: var(--text-primary);">${escapeHtml(r.domain)}</span>
+                    </div>
+                    <div>
+                        <span class="detail-label" style="font-size: 0.65rem; color: var(--text-muted); display: block;">Backend Address</span>
+                        <span class="detail-value" style="font-size: 0.8rem; font-family: var(--font-mono); color: var(--accent-hover);">${escapeHtml(r.address)}</span>
+                    </div>
+                </div>
+                <details>
+                    <summary style="font-size: 0.725rem; color: var(--text-muted); cursor: pointer; user-select: none;">Show Raw Config</summary>
+                    <pre style="margin-top: 6px; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-secondary); max-height: 120px; overflow-y: auto; white-space: pre-wrap;"><code>${escapeHtml(r.content)}</code></pre>
+                </details>
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to load proxy routes:', err);
+        list.innerHTML = `<div style="color: var(--red); font-size: 0.8rem;">Failed to load proxy routes: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+async function reloadInfraredConfigSettings() {
+    const btn = document.getElementById('btn-reload-proxy-settings');
+    if (!btn) return;
+    btn.disabled = true;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Reloading...';
+    try {
+        showToast('Reloading Infrared proxy configuration...', 'info');
+        const data = await apiFetch('/api/proxy/reload', 'POST');
+        showToast(data.message || 'Config reloaded successfully!', 'success');
+        await loadProxyRoutesSettings();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+    }
+}
+
+// Redirect old users modal triggers to the admin settings modal
+function showUsersModal() {
+    openAdminSettingsModal();
+}
+
+function hideUsersModal() {
+    closeAdminSettingsModal();
 }
 

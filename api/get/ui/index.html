@@ -41,17 +41,7 @@
 
                 <div class="nav-divider"></div>
 
-                <button id="btn-proxy-toggle" class="btn-nav admin-only" onclick="toggleProxy()" title="Toggle Infrared Proxy" style="display: none;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                </button>
 
-                <a href="/infrared" class="btn-nav admin-only" title="Infrared Proxies" style="display: none;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-                </a>
-
-                <button class="btn-nav admin-only" onclick="showUsersModal()" title="Manage Users" style="display: none;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                </button>
 
                 <div class="user-pill" style="position: relative;">
                     <button id="user-menu-trigger" class="user-menu-trigger" onclick="toggleUserMenu(event)" title="User Options">
@@ -261,26 +251,7 @@
         </div>
     </div>
 
-    <!-- Users Management Modal -->
-    <div id="users-modal-overlay" class="modal-overlay">
-        <div class="modal" style="max-width: 600px;" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3>Users</h3>
-                <button class="btn btn-icon" onclick="hideUsersModal()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
-            <div class="modal-body" style="padding-top: 0;">
-                <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
-                    <input type="text" id="new-username" placeholder="New username">
-                    <button class="btn btn-outline" onclick="addUser()">Add User</button>
-                </div>
-                <div class="list-group" id="users-list-container">
-                    <!-- Users list injected here -->
-                </div>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Creation Logs Modal -->
     <div id="logs-modal-overlay" class="modal-overlay">
@@ -889,14 +860,30 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
-            <div class="modal-body">
-                <div class="settings-placeholder-container">
-                    <svg class="settings-placeholder-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <circle cx="12" cy="12" r="3"/>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                    </svg>
-                    <h4 class="settings-placeholder-title">Settings Coming Soon</h4>
-                    <p class="settings-placeholder-desc">This panel will allow you to customize your interface theme, change passwords, and update notification settings.</p>
+            <div class="modal-body settings-layout">
+                <!-- Sidebar -->
+                <div class="settings-sidebar">
+                    <button id="user-tab-account-btn" class="settings-sidebar-btn is-active" onclick="switchUserTab('user-tab-account')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        Account Security
+                    </button>
+                </div>
+                <!-- Content Area -->
+                <div class="settings-content-pane is-active" id="user-tab-account-pane">
+                    <h4 style="margin-bottom: var(--space-md);">Change Password</h4>
+                    <form id="change-password-form" onsubmit="submitChangePassword(event)" style="max-width: 400px;">
+                        <div class="form-group">
+                            <label for="change-pwd-new">New Password</label>
+                            <input type="password" id="change-pwd-new" required placeholder="Enter new password" autocomplete="new-password">
+                        </div>
+                        <div class="form-group">
+                            <label for="change-pwd-confirm">Confirm New Password</label>
+                            <input type="password" id="change-pwd-confirm" required placeholder="Confirm new password" autocomplete="new-password">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="btn-submit-change-pwd" style="margin-top: var(--space-md);">
+                            Update Password
+                        </button>
+                    </form>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: 0; padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
@@ -917,13 +904,75 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
-            <div class="modal-body">
-                <div class="settings-placeholder-container">
-                    <svg class="settings-placeholder-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                    </svg>
-                    <h4 class="settings-placeholder-title">Admin Controls Coming Soon</h4>
-                    <p class="settings-placeholder-desc">This panel will provide administrators with options to configure global CPU/RAM limits, inspect system logs, and run host maintenance tasks.</p>
+            <div class="modal-body settings-layout">
+                <!-- Sidebar -->
+                <div class="settings-sidebar">
+                    <button id="admin-tab-users-btn" class="settings-sidebar-btn is-active" onclick="switchAdminTab('admin-tab-users')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                        Users Management
+                    </button>
+                    <button id="admin-tab-proxy-btn" class="settings-sidebar-btn" onclick="switchAdminTab('admin-tab-proxy')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        Proxy Management
+                    </button>
+                    <button id="admin-tab-system-btn" class="settings-sidebar-btn" onclick="switchAdminTab('admin-tab-system')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        System Configuration
+                    </button>
+                </div>
+                <!-- Content Area -->
+                
+                <!-- Tab 1: Users Management -->
+                <div class="settings-content-pane is-active" id="admin-tab-users-pane">
+                    <h4 style="margin-bottom: var(--space-md);">Users Management</h4>
+                    <div style="display: flex; gap: 8px; margin-bottom: 1rem; max-width: 500px;">
+                        <input type="text" id="new-username" placeholder="New username">
+                        <button class="btn btn-outline" onclick="addUser()">Add User</button>
+                    </div>
+                    <div class="list-group" id="users-list-container">
+                        <!-- Users list injected here -->
+                    </div>
+                </div>
+                
+                <!-- Tab 2: Proxy Management -->
+                <div class="settings-content-pane" id="admin-tab-proxy-pane">
+                    <h4 style="margin-bottom: var(--space-md);">Proxy Management</h4>
+                    <div style="display: flex; align-items: center; gap: var(--space-lg); margin-bottom: var(--space-lg); flex-wrap: wrap;">
+                        <div id="proxy-status-settings" class="proxy-badge">
+                            <span class="status-dot"></span>
+                            <span class="status-text">Checking...</span>
+                        </div>
+                        <button id="btn-proxy-toggle-settings" class="btn btn-sm btn-success" onclick="toggleProxy()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            Start Proxy
+                        </button>
+                        <button id="btn-reload-proxy-settings" class="btn btn-primary btn-sm" onclick="reloadInfraredConfigSettings()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 4px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Reload Config
+                        </button>
+                    </div>
+                    <div id="proxy-routes-list-settings" style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-md);">
+                        <!-- Routes dynamically populated here -->
+                    </div>
+                </div>
+                
+                <!-- Tab 3: System Configuration -->
+                <div class="settings-content-pane" id="admin-tab-system-pane">
+                    <h4 style="margin-bottom: var(--space-md);">System Configuration</h4>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: var(--space-lg);">Configure SSL/TLS settings and custom routing options for the MC Server Manager control panel container.</p>
+                    
+                    <div class="form-group-toggle" style="margin-bottom: var(--space-lg); border-bottom: none; justify-content: flex-start; gap: var(--space-xl);">
+                        <label style="margin-bottom: 0;">Use HTTPS for Management Container</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="sys-https-enabled">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="max-width: 450px;">
+                        <label for="sys-https-domain">Custom Domain Name</label>
+                        <input type="text" id="sys-https-domain" placeholder="e.g. mc.example.com">
+                        <span class="form-hint">Specify the domain name that points to this server's management interface.</span>
+                    </div>
                 </div>
             </div>
             <div class="form-actions" style="margin-top: 0; padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
