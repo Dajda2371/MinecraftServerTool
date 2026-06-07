@@ -2442,3 +2442,20 @@ input:checked + .toggle-slider:before {
     color: rgb(251, 113, 133);
     border-color: rgba(244, 63, 94, 0.2);
 }
+
+/* Sharing Modal behavior and screen fit overrides */
+.modal--large.sharing-modal {
+    max-width: 800px;
+    width: 90vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-xl);
+}
+
+.sharing-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: var(--space-md);
+    min-height: 0;
+}
