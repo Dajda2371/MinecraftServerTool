@@ -2378,3 +2378,67 @@ input:checked + .toggle-slider:before {
     color: var(--accent-hover);
     font-weight: 500;
 }
+
+/* Server Sharing Badges and Layout overrides */
+.explorer-grid.explorer-grid--no-write {
+    grid-template-columns: 1fr;
+}
+
+.share-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 0.725rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm, 4px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-secondary);
+}
+
+.share-badge--start {
+    background: rgba(16, 185, 129, 0.08);
+    color: rgb(52, 211, 153);
+    border-color: rgba(16, 185, 129, 0.2);
+}
+
+.share-badge--stop {
+    background: rgba(239, 68, 68, 0.08);
+    color: rgb(248, 113, 113);
+    border-color: rgba(239, 68, 68, 0.2);
+}
+
+.share-badge--read-console {
+    background: rgba(59, 130, 246, 0.08);
+    color: rgb(96, 165, 250);
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.share-badge--write-console {
+    background: rgba(245, 158, 11, 0.08);
+    color: rgb(251, 191, 36);
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+.share-badge--read-files {
+    background: rgba(139, 92, 246, 0.08);
+    color: rgb(167, 139, 250);
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+.share-badge--write-files {
+    background: rgba(236, 72, 153, 0.08);
+    color: rgb(244, 114, 182);
+    border-color: rgba(236, 72, 153, 0.2);
+}
+
+.share-badge--read-firewall {
+    background: rgba(14, 165, 233, 0.08);
+    color: rgb(56, 189, 248);
+    border-color: rgba(14, 165, 233, 0.2);
+}
+
+.share-badge--write-firewall {
+    background: rgba(244, 63, 94, 0.08);
+    color: rgb(251, 113, 133);
+    border-color: rgba(244, 63, 94, 0.2);
+}

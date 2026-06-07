@@ -134,6 +134,23 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS server_shares (
+            id SERIAL PRIMARY KEY,
+            server_name TEXT NOT NULL REFERENCES servers(name) ON DELETE CASCADE,
+            username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+            can_start BOOLEAN NOT NULL DEFAULT FALSE,
+            can_stop BOOLEAN NOT NULL DEFAULT FALSE,
+            can_read_console BOOLEAN NOT NULL DEFAULT FALSE,
+            can_write_console BOOLEAN NOT NULL DEFAULT FALSE,
+            can_read_files BOOLEAN NOT NULL DEFAULT FALSE,
+            can_write_files BOOLEAN NOT NULL DEFAULT FALSE,
+            can_read_firewall BOOLEAN NOT NULL DEFAULT FALSE,
+            can_write_firewall BOOLEAN NOT NULL DEFAULT FALSE,
+            UNIQUE(server_name, username)
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -677,4 +694,146 @@ def set_setting(key: str, value: str) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def get_server_shares(server_name: str):
+    """List all users this server is shared with and their permissions."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT username, can_start, can_stop, can_read_console, can_write_console, "
+        "       can_read_files, can_write_files, can_read_firewall, can_write_firewall "
+        "FROM server_shares WHERE server_name = %s ORDER BY username ASC",
+        (server_name,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "username": r[0],
+            "can_start": r[1],
+            "can_stop": r[2],
+            "can_read_console": r[3],
+            "can_write_console": r[4],
+            "can_read_files": r[5],
+            "can_write_files": r[6],
+            "can_read_firewall": r[7],
+            "can_write_firewall": r[8]
+        }
+        for r in rows
+    ]
+
+
+def get_server_share(server_name: str, username: str):
+    """Retrieve a single user's permissions for a server."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT username, can_start, can_stop, can_read_console, can_write_console, "
+        "       can_read_files, can_write_files, can_read_firewall, can_write_firewall "
+        "FROM server_shares WHERE server_name = %s AND username = %s",
+        (server_name, username)
+    )
+    r = cursor.fetchone()
+    conn.close()
+    if r:
+        return {
+            "username": r[0],
+            "can_start": r[1],
+            "can_stop": r[2],
+            "can_read_console": r[3],
+            "can_write_console": r[4],
+            "can_read_files": r[5],
+            "can_write_files": r[6],
+            "can_read_firewall": r[7],
+            "can_write_firewall": r[8]
+        }
+    return None
+
+
+def add_or_update_server_share(server_name: str, username: str, permissions: dict) -> None:
+    """Create or update permissions for a shared user on a server."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO server_shares (
+            server_name, username, can_start, can_stop, can_read_console, can_write_console,
+            can_read_files, can_write_files, can_read_firewall, can_write_firewall
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (server_name, username) DO UPDATE SET
+            can_start = EXCLUDED.can_start,
+            can_stop = EXCLUDED.can_stop,
+            can_read_console = EXCLUDED.can_read_console,
+            can_write_console = EXCLUDED.can_write_console,
+            can_read_files = EXCLUDED.can_read_files,
+            can_write_files = EXCLUDED.can_write_files,
+            can_read_firewall = EXCLUDED.can_read_firewall,
+            can_write_firewall = EXCLUDED.can_write_firewall
+        """,
+        (
+            server_name,
+            username,
+            permissions.get("can_start", False),
+            permissions.get("can_stop", False),
+            permissions.get("can_read_console", False),
+            permissions.get("can_write_console", False),
+            permissions.get("can_read_files", False),
+            permissions.get("can_write_files", False),
+            permissions.get("can_read_firewall", False),
+            permissions.get("can_write_firewall", False),
+        )
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_server_share(server_name: str, username: str) -> bool:
+    """Revoke a user's access to a shared server."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM server_shares WHERE server_name = %s AND username = %s",
+        (server_name, username)
+    )
+    deleted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_shared_servers_for_user(username: str):
+    """Retrieve all servers shared with a specific user."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT s.name, s.owner, s.type, s.version, s.jar_path, s.port, s.hostname, s.container_name, s.memory_mb
+        FROM servers s
+        JOIN server_shares sh ON s.name = sh.server_name
+        WHERE sh.username = %s
+        """,
+        (username,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "name": data[0],
+            "owner": data[1],
+            "type": data[2],
+            "version": data[3],
+            "jar_path": data[4],
+            "port": data[5],
+            "hostname": data[6],
+            "container_name": data[7],
+            "memory_mb": data[8],
+        }
+        for data in rows
+    ]
 

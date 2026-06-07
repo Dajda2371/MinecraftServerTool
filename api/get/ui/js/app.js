@@ -263,6 +263,123 @@ function renderServers() {
         const containerName = srv.container_name || `mc-${srv.name}`;
         const isRunning = status === 'running';
 
+        const perms = srv.permissions || {};
+        const isOwner = !!srv.is_owner;
+        const canWriteFiles = !!perms.can_write_files;
+
+        const editHostnameBtn = canWriteFiles
+            ? `<button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+               </button>`
+            : '';
+
+        const editMemoryBtn = canWriteFiles
+            ? `<button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showMemoryModal('${escapeAttr(srv.name)}', ${memory})">
+                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+               </button>`
+            : '';
+
+        let actionsHtml = '';
+        if (status === 'downloading_mods') {
+            if (perms.can_read_files) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                   Logs
+                               </button>`;
+            }
+            if (perms.can_write_files) {
+                actionsHtml += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelModDownload('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                   Cancel
+                               </button>`;
+            }
+        } else if (status === 'creating') {
+            if (perms.can_read_files) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                   Logs
+                               </button>`;
+            }
+            if (perms.can_write_files) {
+                actionsHtml += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelServerCreation('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                   Cancel
+                               </button>`;
+            }
+        } else if (status === 'install_required') {
+            if (perms.can_write_files) {
+                actionsHtml += `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="event.stopPropagation(); installServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                   Install
+                               </button>`;
+            }
+            if (isOwner) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                   Delete
+                               </button>`;
+            }
+        } else if (!srv.eula_agreed) {
+            if (perms.can_start) {
+                actionsHtml += `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="event.stopPropagation(); agreeToEula('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                   Agree to EULA
+                               </button>`;
+            }
+            if (isOwner) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                   Delete
+                               </button>`;
+            }
+        } else if (isRunning) {
+            if (perms.can_read_console) {
+                actionsHtml += `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="event.stopPropagation(); showConsoleModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                                   Console
+                               </button>`;
+            }
+            if (perms.can_stop) {
+                actionsHtml += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); stopServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                                   Stop
+                               </button>`;
+            }
+            if (perms.can_read_files) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                   Files
+                               </button>
+                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                                   Logs
+                               </button>`;
+            }
+        } else {
+            if (perms.can_start) {
+                actionsHtml += `<button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startServer('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                   Start
+                               </button>`;
+            }
+            if (isOwner) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                   Delete
+                               </button>`;
+            }
+            if (perms.can_read_files) {
+                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                   Files
+                               </button>
+                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                                   Logs
+                               </button>`;
+            }
+        }
+
         return `
             <div class="server-card" style="animation-delay: ${i * 0.06}s; cursor: pointer;" id="card-${srv.name}" onclick="showServerSettingsModal('${escapeAttr(srv.name)}')">
                 <div class="card-header">
@@ -293,91 +410,18 @@ function renderServers() {
                             <span class="detail-label">Hostname</span>
                             <span class="detail-value">${escapeHtml(hostname)}</span>
                         </div>
-                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showHostnameModal('${escapeAttr(srv.name)}', '${escapeAttr(hostname)}')">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                        </button>
+                        ${editHostnameBtn}
                     </div>
                     <div class="detail-item" style="grid-column: span 2; display: flex; flex-direction: row; justify-content: space-between; align-items: center;">
                         <div style="display: flex; flex-direction: column;">
                             <span class="detail-label">RAM Limit</span>
                             <span class="detail-value">${memory} MB</span>
                         </div>
-                        <button class="btn btn-icon" style="opacity: 0.6;" onclick="event.stopPropagation(); showMemoryModal('${escapeAttr(srv.name)}', ${memory})">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                        </button>
+                        ${editMemoryBtn}
                     </div>
                 </div>
                 <div class="card-actions">
-                    ${status === 'downloading_mods'
-                        ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
-                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                               Logs
-                           </button>
-                           <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelModDownload('${escapeAttr(srv.name)}')">
-                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                               Cancel
-                           </button>`
-                        : status === 'creating'
-                            ? `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                   Logs
-                               </button>
-                               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelServerCreation('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                   Cancel
-                               </button>`
-                        : status === 'install_required'
-                            ? `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="event.stopPropagation(); installServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                   Install
-                               </button>
-                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                   Delete
-                               </button>`
-                            : !srv.eula_agreed
-                            ? `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="event.stopPropagation(); agreeToEula('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                   Agree to EULA
-                               </button>
-                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                   Delete
-                               </button>`
-                            : isRunning
-                                ? `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="event.stopPropagation(); showConsoleModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                                       Console
-                                   </button>
-                                   <button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); stopServer('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                                       Stop
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                       Files
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                                       Logs
-                                   </button>`
-                                : `<button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startServer('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                       Start
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                       Delete
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                       Files
-                                   </button>
-                                   <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
-                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                                       Logs
-                                   </button>`
-                    }
+                    ${actionsHtml}
                 </div>
             </div>
         `;
@@ -788,17 +832,30 @@ function showConsoleModal(name) {
     document.getElementById('console-server-name').textContent = name;
     const contentArea = document.getElementById('console-logs-content');
     contentArea.textContent = 'Connecting to console...';
-    document.getElementById('console-command-input').value = '';
+    
+    // Check write console permissions
+    const currentServer = servers.find(s => s.name === name);
+    const perms = currentServer ? currentServer.permissions : {};
+    const canWriteConsole = !!perms.can_write_console;
+    
+    const inputEl = document.getElementById('console-command-input');
+    if (inputEl) {
+        inputEl.value = '';
+        inputEl.disabled = !canWriteConsole;
+        inputEl.placeholder = canWriteConsole ? "Type server command here..." : "You do not have permission to send commands";
+    }
     
     document.getElementById('console-modal-overlay').classList.add('is-visible');
     
     // Join console room via Socket.IO
     socket.emit('join_console', { name });
     
-    // Auto-focus input
-    setTimeout(() => {
-        document.getElementById('console-command-input').focus();
-    }, 200);
+    // Auto-focus input if writable
+    if (canWriteConsole) {
+        setTimeout(() => {
+            document.getElementById('console-command-input').focus();
+        }, 200);
+    }
 }
 
 function hideConsoleModal(e) {
@@ -1271,6 +1328,32 @@ async function showFileExplorerModal(name) {
     explorerChanges = {};
     editorOriginalPath = null;
     
+    // Check permissions
+    const currentServer = servers.find(s => s.name === name);
+    const perms = currentServer ? currentServer.permissions : {};
+    const canWriteFiles = !!perms.can_write_files;
+    
+    // Toggle New File / Folder / Upload buttons visibility
+    const btnNewFile = document.getElementById('btn-explorer-new-file');
+    const btnNewFolder = document.getElementById('btn-explorer-new-folder');
+    const btnUploadLocal = document.getElementById('btn-explorer-upload-local');
+    if (btnNewFile) btnNewFile.style.display = canWriteFiles ? 'inline-flex' : 'none';
+    if (btnNewFolder) btnNewFolder.style.display = canWriteFiles ? 'inline-flex' : 'none';
+    if (btnUploadLocal) btnUploadLocal.style.display = canWriteFiles ? 'inline-flex' : 'none';
+    
+    // Toggle right changes staging panel and adjust explorer grid columns
+    const rightContainer = document.querySelector('.explorer-right-container');
+    const explorerGrid = document.querySelector('.explorer-grid');
+    if (rightContainer && explorerGrid) {
+        if (canWriteFiles) {
+            rightContainer.style.display = 'block';
+            explorerGrid.classList.remove('explorer-grid--no-write');
+        } else {
+            rightContainer.style.display = 'none';
+            explorerGrid.classList.add('explorer-grid--no-write');
+        }
+    }
+    
     document.getElementById('explorer-server-name').textContent = name;
     document.getElementById('file-explorer-modal-overlay').classList.add('is-visible');
     
@@ -1375,22 +1458,38 @@ async function editFileInExplorer(path) {
         }
         
         editorOriginalPath = path;
-        document.getElementById('editor-filename-label').textContent = `Editing: ${path}`;
+        
+        // Check permissions
+        const currentServer = servers.find(s => s.name === activeExplorerServer);
+        const perms = currentServer ? currentServer.permissions : {};
+        const canWrite = !!perms.can_write_files;
+        
+        document.getElementById('editor-filename-label').textContent = canWrite ? `Editing: ${path}` : `Viewing: ${path}`;
         
         // Pre-fill content (or load from explorerChanges if already edited but unstaged)
         const currentChange = explorerChanges[path];
         const initialText = currentChange ? currentChange.content : data.content;
         
-        document.getElementById('explorer-editor-textarea').value = initialText;
+        const textarea = document.getElementById('explorer-editor-textarea');
+        textarea.value = initialText;
+        textarea.readOnly = !canWrite;
+        
+        // Hide/show Keep Changes button
+        const btnSave = document.getElementById('btn-explorer-editor-save');
+        if (btnSave) {
+            btnSave.style.display = canWrite ? 'inline-flex' : 'none';
+        }
         
         // Swap views
         document.getElementById('explorer-browser-view').style.display = 'none';
         document.getElementById('explorer-editor-view').style.display = 'flex';
         
-        // Auto-focus editor
-        setTimeout(() => {
-            document.getElementById('explorer-editor-textarea').focus();
-        }, 100);
+        // Auto-focus editor if writable
+        if (canWrite) {
+            setTimeout(() => {
+                textarea.focus();
+            }, 100);
+        }
         
     } catch (err) {
         showToast(`Failed to load file: ${err.message}`, 'error');
@@ -1675,6 +1774,11 @@ function setupExplorerDragAndDrop() {
     
     if (!zone || !overlay) return;
     
+    // Check write permissions
+    const currentServer = servers.find(s => s.name === activeExplorerServer);
+    const perms = currentServer ? currentServer.permissions : {};
+    if (!perms.can_write_files) return;
+    
     // Remove duplicates if setup multiple times
     const newZone = zone.cloneNode(true);
     zone.parentNode.replaceChild(newZone, zone);
@@ -1732,6 +1836,36 @@ function formatBytes(bytes, decimals = 2) {
 function showServerSettingsModal(name) {
     activeSettingsServer = name;
     document.getElementById('settings-server-name').textContent = name;
+    
+    // Check permissions for buttons
+    const currentServer = servers.find(s => s.name === name);
+    const perms = currentServer ? currentServer.permissions : {};
+    const isOwner = currentServer ? currentServer.is_owner : true;
+    
+    // Quick Settings: visible if they can read files
+    const btnQuickSettings = document.getElementById('btn-settings-quick-settings');
+    if (btnQuickSettings) {
+        btnQuickSettings.style.display = perms.can_read_files ? 'flex' : 'none';
+    }
+    
+    // Upload Mods: visible if they can write files
+    const btnUploadMods = document.getElementById('btn-settings-upload-mods');
+    if (btnUploadMods) {
+        btnUploadMods.style.display = perms.can_write_files ? 'flex' : 'none';
+    }
+    
+    // Firewall: visible if they can read OR write firewall
+    const btnFirewall = document.getElementById('btn-settings-firewall');
+    if (btnFirewall) {
+        btnFirewall.style.display = (perms.can_read_firewall || perms.can_write_firewall) ? 'flex' : 'none';
+    }
+    
+    // Sharing: visible only to owner/admin
+    const btnSharing = document.getElementById('btn-settings-sharing');
+    if (btnSharing) {
+        btnSharing.style.display = isOwner ? 'flex' : 'none';
+    }
+
     document.getElementById('settings-modal-overlay').classList.add('is-visible');
 }
 
@@ -1828,6 +1962,16 @@ function checkRconFirewallSuggestion() {
     const rconPortInput = document.getElementById('qs-rcon-port');
     const portLabel = document.getElementById('qs-rcon-port-suggest');
     
+    // Hide if user lacks write firewall permission
+    const serverName = activeQuickSettingsServer;
+    const currentServer = servers.find(s => s.name === serverName);
+    const hasWriteFirewall = currentServer && currentServer.permissions ? currentServer.permissions.can_write_firewall : true;
+    
+    if (!hasWriteFirewall) {
+        if (rconAlertBox) rconAlertBox.style.display = 'none';
+        return;
+    }
+    
     if (enableRconEl && enableRconEl.checked) {
         const rconPortVal = rconPortInput ? rconPortInput.value : 25575;
         if (portLabel) portLabel.textContent = rconPortVal;
@@ -1910,6 +2054,15 @@ async function showQuickSettingsModal(name) {
         const rconPortVal = data.rcon_port || 25575;
         hasRconFirewallRule = (fwData.rules || []).some(r => r.protocol === 'TCP' && r.internal_port === parseInt(rconPortVal) && r.enabled);
         
+        const currentServer = servers.find(s => s.name === name);
+        const hasWriteAccess = currentServer && currentServer.permissions ? currentServer.permissions.can_write_files : true;
+        
+        // Hide/show save button
+        const saveBtn = document.getElementById('btn-save-quick-settings');
+        if (saveBtn) {
+            saveBtn.style.display = hasWriteAccess ? 'inline-block' : 'none';
+        }
+        
         // Populate and enable all inputs
         const fieldMapping = {
             'qs-server-port': data.server_port,
@@ -1940,7 +2093,7 @@ async function showQuickSettingsModal(name) {
                 } else {
                     el.value = val !== undefined && val !== null ? val : '';
                 }
-                el.disabled = false;
+                el.disabled = !hasWriteAccess;
                 // Store loaded value
                 loadedQuickSettings[id] = el.type === 'checkbox' ? el.checked : String(el.value).trim();
             }
@@ -1979,7 +2132,7 @@ async function showQuickSettingsModal(name) {
                             <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
                                 <label style="font-weight: 600; margin-bottom: 0;">${escapeHtml(key)}</label>
                                 <label class="toggle-switch">
-                                    <input type="checkbox" id="qs-vc-${key}" ${isChecked ? 'checked' : ''}>
+                                    <input type="checkbox" id="qs-vc-${key}" ${isChecked ? 'checked' : ''} ${hasWriteAccess ? '' : 'disabled'}>
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
@@ -1997,7 +2150,7 @@ async function showQuickSettingsModal(name) {
                         <div class="form-group" style="display: flex; flex-direction: column; gap: var(--space-xs); border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: var(--space-sm);">
                             <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
                                 <label for="qs-vc-${key}" style="font-weight: 600; margin-bottom: 0;">${escapeHtml(key)}</label>
-                                <input type="${inputType}" id="qs-vc-${key}" value="${escapeHtml(val)}" required ${stepAttr} style="width: 120px; text-align: right; font-weight: 600;">
+                                <input type="${inputType}" id="qs-vc-${key}" value="${escapeHtml(val)}" required ${stepAttr} ${hasWriteAccess ? '' : 'disabled'} style="width: 120px; text-align: right; font-weight: 600;">
                             </div>
                             <span class="form-hint" style="color: var(--text-muted); font-size: 0.725rem; margin-top: 2px; line-height: 1.4;">
                                 ${descHtml}
@@ -2299,6 +2452,22 @@ function triggerSettingsFirewall() {
 async function showFirewallModal(name) {
     activeFirewallServer = name;
     document.getElementById('firewall-server-name').textContent = name;
+    
+    // Check permissions
+    const currentServer = servers.find(s => s.name === name);
+    const perms = currentServer ? currentServer.permissions : {};
+    const canWrite = !!perms.can_write_firewall;
+    
+    const toggleBtn = document.getElementById('btn-toggle-add-rule');
+    if (toggleBtn) {
+        toggleBtn.style.display = canWrite ? 'inline-flex' : 'none';
+    }
+    
+    const applyBtn = document.getElementById('btn-apply-firewall');
+    if (applyBtn) {
+        applyBtn.style.display = canWrite ? 'inline-block' : 'none';
+    }
+    
     document.getElementById('firewall-modal-overlay').classList.add('is-visible');
     toggleAddRuleForm(false);
     await loadFirewallRules();
@@ -2373,7 +2542,16 @@ async function loadFirewallRules() {
         const data = await apiFetch(`/api/server/${activeFirewallServer}/firewall`);
         firewallServerPort = data.server_port || 25565;
         renderFirewallRules(data.rules || []);
-        renderVoiceChatAlert(data.voicechat, data.rules || []);
+        
+        // Hide simple voicechat alert if user lacks write firewall permission
+        const currentServer = servers.find(s => s.name === activeFirewallServer);
+        const hasWriteFirewall = currentServer && currentServer.permissions ? currentServer.permissions.can_write_firewall : true;
+        if (hasWriteFirewall) {
+            renderVoiceChatAlert(data.voicechat, data.rules || []);
+        } else {
+            const alertBox = document.getElementById('voicechat-detect-alert');
+            if (alertBox) alertBox.style.display = 'none';
+        }
     } catch (err) {
         showToast(`Failed to load firewall rules: ${err.message}`, 'error');
     }
@@ -2390,6 +2568,9 @@ function renderFirewallRules(rules) {
     }
     emptyState.style.display = 'none';
     
+    const currentServer = servers.find(s => s.name === activeFirewallServer);
+    const hasWriteFirewall = currentServer && currentServer.permissions ? currentServer.permissions.can_write_firewall : true;
+    
     rules.forEach(rule => {
         const tr = document.createElement('tr');
         const protoBadge = rule.protocol === 'TCP' ? 'badge-proto--tcp' : 'badge-proto--udp';
@@ -2400,13 +2581,26 @@ function renderFirewallRules(rules) {
         
         // Prevent deleting the primary server game port rule
         const isPrimaryPortRule = (rule.protocol === 'TCP' && rule.internal_port === firewallServerPort) || rule.label === 'Primary Game Port';
-        const deleteBtnHtml = isPrimaryPortRule
-            ? `<button class="btn btn-icon btn-sm" disabled style="opacity: 0.35; cursor: not-allowed;" title="Primary Game Port (Cannot delete)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-               </button>`
-            : `<button class="btn btn-icon btn-sm" onclick="deleteRule(${rule.id})" title="Delete Rule">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-               </button>`;
+        
+        let actionsHtml = '';
+        if (hasWriteFirewall) {
+            const deleteBtnHtml = isPrimaryPortRule
+                ? `<button class="btn btn-icon btn-sm" disabled style="opacity: 0.35; cursor: not-allowed;" title="Primary Game Port (Cannot delete)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                   </button>`
+                : `<button class="btn btn-icon btn-sm" onclick="deleteRule(${rule.id})" title="Delete Rule">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                   </button>`;
+                   
+            actionsHtml = `
+                <button class="btn btn-icon btn-sm" onclick="editRule('${ruleEscaped}')" title="Edit Rule">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+                ${deleteBtnHtml}
+            `;
+        } else {
+            actionsHtml = `<span style="color: var(--text-muted); font-size: 0.75rem;">Read-only</span>`;
+        }
         
         tr.innerHTML = `
             <td><span class="badge-proto ${protoBadge}">${rule.protocol}</span></td>
@@ -2415,15 +2609,12 @@ function renderFirewallRules(rules) {
             <td>${labelHtml}</td>
             <td style="text-align: center;">
                 <label class="toggle-switch">
-                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} onchange="toggleRuleEnabled(${rule.id}, ${rule.enabled})">
+                    <input type="checkbox" ${rule.enabled ? 'checked' : ''} ${hasWriteFirewall ? '' : 'disabled'} onchange="toggleRuleEnabled(${rule.id}, ${rule.enabled})">
                     <span class="toggle-slider"></span>
                 </label>
             </td>
             <td style="text-align: right;">
-                <button class="btn btn-icon btn-sm" onclick="editRule('${ruleEscaped}')" title="Edit Rule">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </button>
-                ${deleteBtnHtml}
+                ${actionsHtml}
             </td>
         `;
         tbody.appendChild(tr);
@@ -2899,6 +3090,199 @@ async function saveSystemHttpsSettings() {
     } finally {
         btn.disabled = false;
         btn.textContent = oldText;
+    }
+}
+
+// ============================================================================
+// Server Sharing Controller
+// ============================================================================
+let activeSharingServer = null;
+
+function triggerSettingsSharing() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    setTimeout(() => {
+        showSharingModal(name);
+    }, 200);
+}
+
+function triggerSettingsFirewall() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    setTimeout(() => {
+        showFirewallModal(name);
+    }, 200);
+}
+
+async function showSharingModal(name) {
+    activeSharingServer = name;
+    document.getElementById('sharing-server-name').textContent = name;
+    
+    // Reset form
+    document.getElementById('share-server-form').reset();
+    document.getElementById('share-username').value = '';
+    document.getElementById('share-username').disabled = false;
+    document.getElementById('btn-share-submit').textContent = 'Share Server';
+    
+    // Clear checkboxes
+    const checkboxes = [
+        'share-perm-start',
+        'share-perm-stop',
+        'share-perm-read-console',
+        'share-perm-write-console',
+        'share-perm-read-files',
+        'share-perm-write-files',
+        'share-perm-read-firewall',
+        'share-perm-write-firewall'
+    ];
+    checkboxes.forEach(id => {
+        const cb = document.getElementById(id);
+        if (cb) cb.checked = false;
+    });
+
+    document.getElementById('sharing-modal-overlay').classList.add('is-visible');
+    await loadServerShares();
+}
+
+function hideSharingModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('sharing-modal-overlay').classList.remove('is-visible');
+    activeSharingServer = null;
+}
+
+async function loadServerShares() {
+    if (!activeSharingServer) return;
+    try {
+        const data = await apiFetch(`/api/server/${activeSharingServer}/shares`);
+        renderSharedUsers(data.shares || []);
+    } catch (err) {
+        showToast(`Failed to load server shares: ${err.message}`, 'error');
+    }
+}
+
+function renderSharedUsers(shares) {
+    const tbody = document.getElementById('sharing-rules-tbody');
+    const emptyState = document.getElementById('sharing-empty-state');
+    tbody.innerHTML = '';
+    
+    if (shares.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+    emptyState.style.display = 'none';
+    
+    shares.forEach(share => {
+        const tr = document.createElement('tr');
+        
+        // Build badges for active permissions
+        const badgeList = [];
+        if (share.can_start) badgeList.push('<span class="share-badge share-badge--start">Start</span>');
+        if (share.can_stop) badgeList.push('<span class="share-badge share-badge--stop">Stop</span>');
+        if (share.can_read_console) badgeList.push('<span class="share-badge share-badge--read-console">Read Console</span>');
+        if (share.can_write_console) badgeList.push('<span class="share-badge share-badge--write-console">Send Commands</span>');
+        if (share.can_read_files) badgeList.push('<span class="share-badge share-badge--read-files">Read Files</span>');
+        if (share.can_write_files) badgeList.push('<span class="share-badge share-badge--write-files">Write Files</span>');
+        if (share.can_read_firewall) badgeList.push('<span class="share-badge share-badge--read-firewall">Read Firewall</span>');
+        if (share.can_write_firewall) badgeList.push('<span class="share-badge share-badge--write-firewall">Write Firewall</span>');
+        
+        const badgesHtml = badgeList.length > 0 ? badgeList.join(' ') : '<span style="color: var(--text-muted); font-style: italic;">No permissions</span>';
+        
+        // Escape share object for editing
+        const shareEscaped = escapeAttr(JSON.stringify(share));
+        
+        tr.innerHTML = `
+            <td><strong>${escapeHtml(share.username)}</strong></td>
+            <td><div style="display: flex; flex-wrap: wrap; gap: 4px;">${badgesHtml}</div></td>
+            <td style="text-align: right; white-space: nowrap;">
+                <button class="btn btn-icon btn-sm" onclick="editShare('${shareEscaped}')" title="Edit Permissions">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+                <button class="btn btn-icon btn-sm" onclick="revokeShare('${escapeAttr(share.username)}')" title="Revoke Share">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--red);"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function editShare(shareJsonEscaped) {
+    const txt = document.createElement('textarea');
+    txt.innerHTML = shareJsonEscaped;
+    const share = JSON.parse(txt.value);
+    
+    document.getElementById('share-username').value = share.username;
+    document.getElementById('share-username').disabled = true;
+    document.getElementById('btn-share-submit').textContent = 'Update Share';
+    
+    document.getElementById('share-perm-start').checked = !!share.can_start;
+    document.getElementById('share-perm-stop').checked = !!share.can_stop;
+    document.getElementById('share-perm-read-console').checked = !!share.can_read_console;
+    document.getElementById('share-perm-write-console').checked = !!share.can_write_console;
+    document.getElementById('share-perm-read-files').checked = !!share.can_read_files;
+    document.getElementById('share-perm-write-files').checked = !!share.can_write_files;
+    document.getElementById('share-perm-read-firewall').checked = !!share.can_read_firewall;
+    document.getElementById('share-perm-write-firewall').checked = !!share.can_write_firewall;
+}
+
+async function shareServer(e) {
+    e.preventDefault();
+    if (!activeSharingServer) return;
+    
+    const username = document.getElementById('share-username').value.trim();
+    if (!username) return;
+    
+    const payload = {
+        username: username,
+        can_start: document.getElementById('share-perm-start').checked,
+        can_stop: document.getElementById('share-perm-stop').checked,
+        can_read_console: document.getElementById('share-perm-read-console').checked,
+        can_write_console: document.getElementById('share-perm-write-console').checked,
+        can_read_files: document.getElementById('share-perm-read-files').checked,
+        can_write_files: document.getElementById('share-perm-write-files').checked,
+        can_read_firewall: document.getElementById('share-perm-read-firewall').checked,
+        can_write_firewall: document.getElementById('share-perm-write-firewall').checked
+    };
+    
+    const btn = document.getElementById('btn-share-submit');
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    
+    try {
+        const res = await apiFetch(`/api/server/${activeSharingServer}/share`, 'POST', payload);
+        showToast(res.message || 'Share access updated!', 'success');
+        
+        // Reset form but keep focus/view
+        document.getElementById('share-server-form').reset();
+        document.getElementById('share-username').value = '';
+        document.getElementById('share-username').disabled = false;
+        btn.textContent = 'Share Server';
+        
+        await loadServerShares();
+    } catch (err) {
+        showToast(`Failed to update share: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+    }
+}
+
+async function revokeShare(username) {
+    if (!activeSharingServer || !username) return;
+    if (!confirm(`Are you sure you want to revoke share access for user '${username}'?`)) {
+        return;
+    }
+    
+    try {
+        showToast(`Revoking access for ${username}...`, 'info');
+        const res = await apiFetch(`/api/server/${activeSharingServer}/share/${username}`, 'DELETE');
+        showToast(res.message || 'Access revoked successfully!', 'success');
+        await loadServerShares();
+    } catch (err) {
+        showToast(`Failed to revoke access: ${err.message}`, 'error');
     }
 }
 

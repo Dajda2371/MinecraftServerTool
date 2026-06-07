@@ -162,7 +162,32 @@ def check_server_access(server_name: str, user: str) -> bool:
     info = api.db.get_server_info(server_name)
     if info and info['owner'] == user:
         return True
+    # If a share exists, the user has access to the server
+    share = api.db.get_server_share(server_name, user)
+    if share:
+        return True
     return False
+
+def check_server_permission(server_name: str, user: str, permission: str) -> bool:
+    if user == 'admin':
+        return True
+    info = api.db.get_server_info(server_name)
+    if not info:
+        return False
+    if info['owner'] == user:
+        return True
+        
+    share = api.db.get_server_share(server_name, user)
+    if not share:
+        return False
+        
+    perm_key = f"can_{permission}" if not permission.startswith("can_") else permission
+    
+    # Custom rule: viewing console is allowed if either can_read_console OR can_read_files is True
+    if perm_key == "can_read_console":
+        return bool(share.get("can_read_console", False)) or bool(share.get("can_read_files", False))
+        
+    return bool(share.get(perm_key, False))
 
 # --- Pydantic Models for POST requests ---
 class LoginRequest(BaseModel):
@@ -213,6 +238,17 @@ class HttpsSettingsRequest(BaseModel):
 class CommandRequest(BaseModel):
     name: str
     command: str
+
+class SharePermissionRequest(BaseModel):
+    username: str
+    can_start: bool = False
+    can_stop: bool = False
+    can_read_console: bool = False
+    can_write_console: bool = False
+    can_read_files: bool = False
+    can_write_files: bool = False
+    can_read_firewall: bool = False
+    can_write_firewall: bool = False
 
 class FirewallRuleCreate(BaseModel):
     protocol: str
@@ -332,6 +368,75 @@ async def user_change_password(data: ChangePasswordRequest, current_user: str = 
     return {"message": "Password changed successfully"}
 
 # ============================================================================
+# Server Sharing Endpoints
+# ============================================================================
+@fastapi_app.get("/api/server/{name}/shares")
+async def get_server_shares_endpoint(name: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    server = api.db.get_server_info(name)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if current_user != 'admin' and server['owner'] != current_user:
+        raise HTTPException(status_code=403, detail="Access denied: Only owner or admin can manage shares")
+        
+    shares = api.db.get_server_shares(name)
+    return {"shares": shares}
+
+@fastapi_app.post("/api/server/{name}/share")
+async def share_server_endpoint(name: str, data: SharePermissionRequest, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    target_user = data.username.strip()
+    
+    server = api.db.get_server_info(name)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if current_user != 'admin' and server['owner'] != current_user:
+        raise HTTPException(status_code=403, detail="Access denied: Only owner or admin can manage shares")
+        
+    # Validations
+    if target_user == current_user:
+        raise HTTPException(status_code=400, detail="Cannot share a server with yourself")
+    if target_user == server['owner']:
+        raise HTTPException(status_code=400, detail="User is already the owner of this server")
+    if target_user == 'admin':
+        raise HTTPException(status_code=400, detail="Admin already has full access to all servers")
+        
+    # Check if target user exists in DB
+    user_info = api.db.get_user_info(target_user)
+    if not user_info:
+        raise HTTPException(status_code=404, detail=f"User '{target_user}' does not exist")
+        
+    permissions = {
+        "can_start": data.can_start,
+        "can_stop": data.can_stop,
+        "can_read_console": data.can_read_console,
+        "can_write_console": data.can_write_console,
+        "can_read_files": data.can_read_files,
+        "can_write_files": data.can_write_files,
+        "can_read_firewall": data.can_read_firewall,
+        "can_write_firewall": data.can_write_firewall,
+    }
+    api.db.add_or_update_server_share(name, target_user, permissions)
+    return {"message": f"Server sharing updated for user '{target_user}'"}
+
+@fastapi_app.delete("/api/server/{name}/share/{username}")
+async def revoke_server_share_endpoint(name: str, username: str, current_user: str = Depends(get_current_user)):
+    name = name.strip()
+    target_user = username.strip()
+    
+    server = api.db.get_server_info(name)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if current_user != 'admin' and server['owner'] != current_user:
+        raise HTTPException(status_code=403, detail="Access denied: Only owner or admin can manage shares")
+        
+    deleted = api.db.delete_server_share(name, target_user)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"No active share found for user '{target_user}'")
+        
+    return {"message": f"Access revoked for user '{target_user}'"}
+
+# ============================================================================
 # System Endpoints (Admin Only)
 # ============================================================================
 @fastapi_app.get("/api/system/https")
@@ -359,7 +464,9 @@ async def get_servers(current_user: str = Depends(get_current_user)):
     
     # Filter servers if not admin
     if current_user != 'admin':
-        servers = [srv for srv in servers if srv['owner'] == current_user]
+        owned_servers = [srv for srv in servers if srv['owner'] == current_user]
+        shared_servers = api.db.get_shared_servers_for_user(current_user)
+        servers = owned_servers + shared_servers
         
     for srv in servers:
         status = api.post.server.run.get_server_status(srv["name"])
@@ -369,6 +476,45 @@ async def get_servers(current_user: str = Depends(get_current_user)):
             srv["status"] = "UNKNOWN"
         srv["eula_agreed"] = api.post.server.run.is_eula_agreed(srv["name"])
         srv["port"] = api.db.get_server_port_from_properties(srv["name"])
+        
+        is_owner = (current_user == 'admin' or srv['owner'] == current_user)
+        srv["is_owner"] = is_owner
+        
+        if is_owner:
+            srv["permissions"] = {
+                "can_start": True,
+                "can_stop": True,
+                "can_read_console": True,
+                "can_write_console": True,
+                "can_read_files": True,
+                "can_write_files": True,
+                "can_read_firewall": True,
+                "can_write_firewall": True,
+            }
+        else:
+            share = api.db.get_server_share(srv["name"], current_user)
+            if share:
+                srv["permissions"] = {
+                    "can_start": bool(share.get("can_start")),
+                    "can_stop": bool(share.get("can_stop")),
+                    "can_read_console": bool(share.get("can_read_console")) or bool(share.get("can_read_files")),
+                    "can_write_console": bool(share.get("can_write_console")),
+                    "can_read_files": bool(share.get("can_read_files")),
+                    "can_write_files": bool(share.get("can_write_files")),
+                    "can_read_firewall": bool(share.get("can_read_firewall")),
+                    "can_write_firewall": bool(share.get("can_write_firewall")),
+                }
+            else:
+                srv["permissions"] = {
+                    "can_start": False,
+                    "can_stop": False,
+                    "can_read_console": False,
+                    "can_write_console": False,
+                    "can_read_files": False,
+                    "can_write_files": False,
+                    "can_read_firewall": False,
+                    "can_write_firewall": False,
+                }
     return {"servers": servers}
 
 @fastapi_app.get("/api/server/{name}")
@@ -377,7 +523,7 @@ async def get_server(name: str, current_user: str = Depends(get_current_user)):
     if not server:
         raise HTTPException(status_code=404, detail="Server not found")
         
-    if current_user != 'admin' and server['owner'] != current_user:
+    if not check_server_access(name, current_user):
         raise HTTPException(status_code=403, detail="Access denied")
         
     status = api.post.server.run.get_server_status(name)
@@ -387,6 +533,45 @@ async def get_server(name: str, current_user: str = Depends(get_current_user)):
         server["status"] = "UNKNOWN"
     server["eula_agreed"] = api.post.server.run.is_eula_agreed(name)
     server["port"] = api.db.get_server_port_from_properties(name)
+    
+    is_owner = (current_user == 'admin' or server['owner'] == current_user)
+    server["is_owner"] = is_owner
+    
+    if is_owner:
+        server["permissions"] = {
+            "can_start": True,
+            "can_stop": True,
+            "can_read_console": True,
+            "can_write_console": True,
+            "can_read_files": True,
+            "can_write_files": True,
+            "can_read_firewall": True,
+            "can_write_firewall": True,
+        }
+    else:
+        share = api.db.get_server_share(name, current_user)
+        if share:
+            server["permissions"] = {
+                "can_start": bool(share.get("can_start")),
+                "can_stop": bool(share.get("can_stop")),
+                "can_read_console": bool(share.get("can_read_console")) or bool(share.get("can_read_files")),
+                "can_write_console": bool(share.get("can_write_console")),
+                "can_read_files": bool(share.get("can_read_files")),
+                "can_write_files": bool(share.get("can_write_files")),
+                "can_read_firewall": bool(share.get("can_read_firewall")),
+                "can_write_firewall": bool(share.get("can_write_firewall")),
+            }
+        else:
+            server["permissions"] = {
+                "can_start": False,
+                "can_stop": False,
+                "can_read_console": False,
+                "can_write_console": False,
+                "can_read_files": False,
+                "can_write_files": False,
+                "can_read_firewall": False,
+                "can_write_firewall": False,
+            }
     return server
 
 @fastapi_app.get("/api/server/{name}/creation-logs")
@@ -495,7 +680,7 @@ async def install_server(data: ServerNameRequest, current_user: str = Depends(ge
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
         
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     threading.Thread(
@@ -510,7 +695,7 @@ async def install_server(data: ServerNameRequest, current_user: str = Depends(ge
 @fastapi_app.post("/api/server/{name}/upload-mod")
 async def upload_mod(name: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     if not file.filename.endswith(".jar"):
@@ -531,7 +716,7 @@ async def upload_mod(name: str, file: UploadFile = File(...), current_user: str 
 @fastapi_app.post("/api/server/{name}/upload-modlist")
 async def upload_modlist(name: str, file: UploadFile = File(...), current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     if not file.filename.endswith(".html") and not file.filename.endswith(".json"):
@@ -563,7 +748,7 @@ async def upload_modlist(name: str, file: UploadFile = File(...), current_user: 
 @fastapi_app.get("/api/server/{name}/files")
 async def list_server_files(name: str, path: str = "", current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "read_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_dir = os.path.abspath(f"data/servers/{name}")
@@ -604,7 +789,7 @@ async def list_server_files(name: str, path: str = "", current_user: str = Depen
 @fastapi_app.get("/api/server/{name}/file")
 async def get_server_file(name: str, path: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "read_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_dir = os.path.abspath(f"data/servers/{name}")
@@ -640,7 +825,7 @@ async def get_server_file(name: str, path: str, current_user: str = Depends(get_
 @fastapi_app.get("/api/server/{name}/logs")
 async def list_server_logs(name: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "read_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_dir = os.path.abspath(f"data/servers/{name}")
@@ -680,7 +865,7 @@ async def upload_server_files(
     current_user: str = Depends(get_current_user)
 ):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     import json
@@ -775,7 +960,7 @@ async def agree_eula(data: ServerNameRequest, current_user: str = Depends(get_cu
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "start"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = api.post.server.run.agree_to_eula(name)
@@ -788,7 +973,7 @@ async def run_server(data: ServerNameRequest, current_user: str = Depends(get_cu
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "start"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await asyncio.to_thread(api.post.server.run.run_server, name)
@@ -801,7 +986,7 @@ async def stop_server(data: ServerNameRequest, current_user: str = Depends(get_c
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "stop"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await asyncio.to_thread(api.post.server.stop.stop_server, name) 
@@ -814,7 +999,10 @@ async def delete_server(data: DeleteServerRequest, current_user: str = Depends(g
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     
-    if not check_server_access(name, current_user):
+    server = api.db.get_server_info(name)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if current_user != 'admin' and server['owner'] != current_user:
         raise HTTPException(status_code=403, detail="Access denied")
 
     result = await asyncio.to_thread(api.post.server.delete.delete_server, name, data.remove_data)
@@ -832,7 +1020,7 @@ async def cancel_mod_download(data: ServerNameRequest, current_user: str = Depen
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
         
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     import docker
@@ -856,7 +1044,7 @@ async def server_hostname(data: UpdateHostnameRequest, current_user: str = Depen
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
     
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
     
     result = api.post.server.hostname.update_hostname(name, hostname)
@@ -872,7 +1060,7 @@ async def server_memory(data: UpdateMemoryRequest, current_user: str = Depends(g
     if not name or memory_mb is None:
         raise HTTPException(status_code=400, detail="name and memory_mb are required")
     
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     result = api.post.server.memory.assign_memory(name, memory_mb, current_user)
@@ -890,7 +1078,7 @@ async def execute_command(data: CommandRequest, current_user: str = Depends(get_
     if not name or not command:
         raise HTTPException(status_code=400, detail="name and command are required")
         
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_console"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_info = api.db.get_server_info(name)
@@ -1209,6 +1397,21 @@ def latest_log_stream_worker(server_name, loop_obj):
 async def connect(sid, environ):
     # Print connection details for debugging
     print(f"[WS Connect] Socket.IO client connected: {sid}")
+    
+    # Parse cookies to find session user
+    cookie_str = environ.get("HTTP_COOKIE", "")
+    session_id = None
+    if cookie_str:
+        import http.cookies
+        cookie = http.cookies.SimpleCookie(cookie_str)
+        if "session_id" in cookie:
+            session_id = cookie["session_id"].value
+            
+    user = None
+    if session_id:
+        user = api.auth.get_session_user(session_id)
+        
+    await sio.save_session(sid, {"username": user})
 
 @sio.event
 async def disconnect(sid):
@@ -1232,6 +1435,16 @@ def _parse_server_name(data) -> str:
 async def handle_join_console(sid, data):
     server_name = _parse_server_name(data)
     if not server_name:
+        return
+        
+    session = await sio.get_session(sid)
+    user = session.get("username")
+    if not user:
+        print(f"[WS Console] Access denied to {sid}: not authenticated")
+        return
+        
+    if not check_server_permission(server_name, user, "read_console"):
+        print(f"[WS Console] Access denied to {sid} for server {server_name}")
         return
         
     room = f"console:{server_name}"
@@ -1279,6 +1492,16 @@ async def handle_join_creation_logs(sid, data):
     if not server_name:
         return
         
+    session = await sio.get_session(sid)
+    user = session.get("username")
+    if not user:
+        print(f"[WS Logs] Access denied to {sid}: not authenticated")
+        return
+        
+    if not check_server_permission(server_name, user, "read_files"):
+        print(f"[WS Logs] Access denied to {sid} for server {server_name}")
+        return
+        
     room = f"logs:{server_name}"
     await sio.enter_room(sid, room)
     print(f"[WS Logs] Client {sid} joined creation logs room for: {server_name}")
@@ -1318,7 +1541,7 @@ async def handle_leave_creation_logs(sid, data):
 @fastapi_app.get("/api/server/{name}/firewall")
 async def get_server_firewall(name: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "read_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_port = api.db.get_server_port_from_properties(name)
@@ -1385,7 +1608,7 @@ async def get_server_firewall(name: str, current_user: str = Depends(get_current
 @fastapi_app.post("/api/server/{name}/firewall/rule")
 async def create_firewall_rule(name: str, data: FirewallRuleCreate, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     protocol = data.protocol.strip().upper()
@@ -1435,7 +1658,7 @@ async def create_firewall_rule(name: str, data: FirewallRuleCreate, current_user
 @fastapi_app.put("/api/server/{name}/firewall/rule/{rule_id}")
 async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     rule = api.db.get_firewall_rule(rule_id)
@@ -1494,7 +1717,7 @@ async def update_firewall_rule(name: str, rule_id: int, data: FirewallRuleUpdate
 @fastapi_app.delete("/api/server/{name}/firewall/rule/{rule_id}")
 async def delete_firewall_rule(name: str, rule_id: int, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     rule = api.db.get_firewall_rule(rule_id)
@@ -1520,7 +1743,7 @@ async def delete_firewall_rule(name: str, rule_id: int, current_user: str = Depe
 @fastapi_app.post("/api/server/{name}/firewall/apply")
 async def apply_firewall_rules(name: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     # Check if the server is currently running
@@ -1537,7 +1760,7 @@ async def apply_firewall_rules(name: str, current_user: str = Depends(get_curren
 @fastapi_app.post("/api/server/{name}/firewall/quick-add-voicechat")
 async def quick_add_voicechat_rule(name: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_firewall"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     # 1. Detect voicechat
@@ -1592,7 +1815,7 @@ async def quick_add_voicechat_rule(name: str, current_user: str = Depends(get_cu
 @fastapi_app.get("/api/server/{name}/quick-settings")
 async def get_server_quick_settings(name: str, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "read_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     import os
@@ -1661,7 +1884,7 @@ async def get_server_quick_settings(name: str, current_user: str = Depends(get_c
 @fastapi_app.put("/api/server/{name}/quick-settings")
 async def update_server_quick_settings(name: str, data: QuickSettingsRequest, current_user: str = Depends(get_current_user)):
     name = name.strip()
-    if not check_server_access(name, current_user):
+    if not check_server_permission(name, current_user, "write_files"):
         raise HTTPException(status_code=403, detail="Access denied")
         
     server_port = data.server_port

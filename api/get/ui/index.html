@@ -319,15 +319,15 @@
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                                     Back
                                 </button>
-                                <button class="btn btn-sm btn-ghost" onclick="promptCreateFile()">
+                                <button class="btn btn-sm btn-ghost" id="btn-explorer-new-file" onclick="promptCreateFile()">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                                     New File
                                 </button>
-                                <button class="btn btn-sm btn-ghost" onclick="promptCreateFolder()">
+                                <button class="btn btn-sm btn-ghost" id="btn-explorer-new-folder" onclick="promptCreateFolder()">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                     New Folder
                                 </button>
-                                <button class="btn btn-sm btn-primary" onclick="triggerLocalFileSelect()">
+                                <button class="btn btn-sm btn-primary" id="btn-explorer-upload-local" onclick="triggerLocalFileSelect()">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                     Upload Local
                                 </button>
@@ -354,7 +354,7 @@
                                 <span class="editor-file-title" id="editor-filename-label">Editing file...</span>
                                 <div style="display: flex; gap: var(--space-sm); margin-left: auto;">
                                     <button class="btn btn-sm btn-ghost" onclick="closeExplorerEditor()">Cancel</button>
-                                    <button class="btn btn-sm btn-success" onclick="saveExplorerEditor()">Keep Changes</button>
+                                    <button class="btn btn-sm btn-success" id="btn-explorer-editor-save" onclick="saveExplorerEditor()">Keep Changes</button>
                                 </div>
                             </div>
                             <div class="editor-textarea-container">
@@ -412,25 +412,32 @@
             </div>
             <div class="modal-body settings-modal-body">
                 <div class="settings-actions-group" style="display: flex; flex-direction: column; gap: var(--space-md); margin-top: var(--space-md);">
-                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsQuickSettings()">
+                    <button class="btn btn-ghost" id="btn-settings-quick-settings" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsQuickSettings()">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
                             <span style="font-weight: 600; font-size: 0.85rem;">Quick Settings</span>
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Configure server.properties (server-port, etc.)</span>
                         </div>
                     </button>
-                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsModsUpload()">
+                    <button class="btn btn-ghost" id="btn-settings-upload-mods" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsModsUpload()">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
                             <span style="font-weight: 600; font-size: 0.85rem;">Upload Mods</span>
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Install mods via CurseForge list or direct .jar</span>
                         </div>
                     </button>
-                    <button class="btn btn-ghost" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsFirewall()">
+                    <button class="btn btn-ghost" id="btn-settings-firewall" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsFirewall()">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
                             <span style="font-weight: 600; font-size: 0.85rem;">Firewall</span>
                             <span style="font-size: 0.725rem; color: var(--text-muted);">Manage exposed container ports (TCP & UDP)</span>
+                        </div>
+                    </button>
+                    <button class="btn btn-ghost owner-only" id="btn-settings-sharing" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsSharing()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm);">
+                            <span style="font-weight: 600; font-size: 0.85rem;">Server Sharing</span>
+                            <span style="font-size: 0.725rem; color: var(--text-muted);">Share this server and configure permissions for others</span>
                         </div>
                     </button>
                 </div>
@@ -999,6 +1006,116 @@
             </div>
             <div class="form-actions" style="margin-top: 0; padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
                 <button type="button" class="btn btn-ghost" onclick="closeAdminSettingsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server Sharing Modal -->
+    <div id="sharing-modal-overlay" class="modal-overlay">
+        <div class="modal modal--large sharing-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Share Server: <span id="sharing-server-name"></span></h3>
+                <button class="btn btn-icon" onclick="hideSharingModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body sharing-modal-body" style="padding-top: var(--space-md);">
+                <!-- Share form -->
+                <form id="share-server-form" onsubmit="shareServer(event)" style="margin-bottom: var(--space-xl); padding-bottom: var(--space-lg); border-bottom: 1px solid var(--border-subtle);">
+                    <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="share-username">Username to share with</label>
+                            <input type="text" id="share-username" placeholder="Enter username..." required autocomplete="off">
+                        </div>
+                    </div>
+                    
+                    <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-md);">Configure Permissions</label>
+                    <div class="sharing-permissions-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-md); margin-bottom: var(--space-lg);">
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Start Server</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-start">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Stop Server</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-stop">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Read Console</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-read-console">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Send Console Commands</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-write-console">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Read Files, Logs & Settings</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-read-files">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Write Files & Settings</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-write-files">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Read Firewall Rules</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-read-firewall">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                            <label style="margin-bottom: 0; font-weight: 600;">Write Firewall Rules</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="share-perm-write-firewall">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: flex-end;">
+                        <button type="submit" class="btn btn-primary" id="btn-share-submit">Share Server</button>
+                    </div>
+                </form>
+
+                <!-- Currently shared users list -->
+                <h4>Currently Shared Users</h4>
+                <div class="sharing-list-container" style="margin-top: var(--space-md); overflow-x: auto;">
+                    <table class="firewall-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Permissions</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sharing-rules-tbody">
+                            <!-- Share rows injected by JS -->
+                        </tbody>
+                    </table>
+                    <div id="sharing-empty-state" class="empty-state-small" style="display: none; padding: var(--space-xl); text-align: center; color: var(--text-muted);">
+                        This server is not shared with anyone yet.
+                    </div>
+                </div>
+            </div>
+            <div class="form-actions" style="margin-top: var(--space-lg); padding-top: var(--space-md); border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-ghost" onclick="hideSharingModal()">Close</button>
             </div>
         </div>
     </div>
