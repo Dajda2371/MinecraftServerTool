@@ -23,6 +23,25 @@ socket.on('servers_updated', async () => {
     console.log('Real-time server update received');
     if (currentUser) {
         await loadServers();
+        
+        if (activeConsoleServer) {
+            const currentServer = servers.find(s => s.name === activeConsoleServer);
+            const perms = currentServer ? currentServer.permissions : {};
+            const isOwnerOrAdmin = currentServer && (currentServer.is_owner || currentUser.username === 'admin');
+            const canReadConsole = isOwnerOrAdmin || !!perms.can_read_console;
+            const canWriteConsole = isOwnerOrAdmin || !!perms.can_write_console;
+            
+            if (!canReadConsole) {
+                hideConsoleModal();
+                showToast('Your permission to read the console was revoked.', 'warning');
+            } else {
+                const inputEl = document.getElementById('console-command-input');
+                if (inputEl) {
+                    inputEl.disabled = !canWriteConsole;
+                    inputEl.placeholder = canWriteConsole ? "Type server command here..." : "You do not have permission to send commands";
+                }
+            }
+        }
     }
 });
 
@@ -3309,8 +3328,9 @@ function updateSharingTogglesState() {
     const writeConsole = document.getElementById('share-perm-write-console');
     const stopServer = document.getElementById('share-perm-stop');
 
-    if (readFiles && readConsole) {
-        if (readFiles.checked) {
+    if (readConsole) {
+        const shouldDisableReadConsole = (readFiles && readFiles.checked) || (writeConsole && writeConsole.checked);
+        if (shouldDisableReadConsole) {
             readConsole.checked = true;
             readConsole.disabled = true;
         } else {
