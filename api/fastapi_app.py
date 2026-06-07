@@ -417,6 +417,7 @@ async def share_server_endpoint(name: str, data: SharePermissionRequest, current
         "can_write_firewall": data.can_write_firewall,
     }
     api.db.add_or_update_server_share(name, target_user, permissions)
+    await sio.emit("servers_updated", {}, room=f"user:{target_user}")
     return {"message": f"Server sharing updated for user '{target_user}'"}
 
 @fastapi_app.delete("/api/server/{name}/share/{username}")
@@ -434,6 +435,7 @@ async def revoke_server_share_endpoint(name: str, username: str, current_user: s
     if not deleted:
         raise HTTPException(status_code=404, detail=f"No active share found for user '{target_user}'")
         
+    await sio.emit("servers_updated", {}, room=f"user:{target_user}")
     return {"message": f"Access revoked for user '{target_user}'"}
 
 # ============================================================================
@@ -1412,6 +1414,8 @@ async def connect(sid, environ):
         user = api.auth.get_session_user(session_id)
         
     await sio.save_session(sid, {"username": user})
+    if user:
+        await sio.enter_room(sid, f"user:{user}")
 
 @sio.event
 async def disconnect(sid):
