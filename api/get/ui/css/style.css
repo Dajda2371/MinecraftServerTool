@@ -2466,19 +2466,65 @@ input:checked + .toggle-slider:before {
 
 /* Sharing Modal behavior and screen fit overrides */
 .modal--large.sharing-modal {
-    max-width: 800px;
-    width: 90vw;
-    max-height: 85vh;
+    width: 95vw;
+    height: 90vh;
+    max-width: none;
+    max-height: none;
     display: flex;
     flex-direction: column;
     padding: var(--space-xl);
 }
 
 .sharing-modal-body {
+    display: flex;
+    flex-direction: row;
+    gap: var(--space-xl);
     flex: 1;
-    overflow-y: auto;
-    padding-right: var(--space-md);
     min-height: 0;
+    overflow: hidden;
+    padding-right: 0;
+}
+
+.sharing-modal-left {
+    flex: 1.1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: var(--space-lg);
+    border-right: 1px solid var(--border-subtle);
+}
+
+.sharing-modal-right {
+    flex: 1.9;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+    .modal--large.sharing-modal {
+        width: 95vw;
+        height: 95vh;
+    }
+    .sharing-modal-body {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .sharing-modal-left {
+        border-right: none;
+        border-bottom: 1px solid var(--border-subtle);
+        padding-right: 0;
+        padding-bottom: var(--space-lg);
+        margin-bottom: var(--space-lg);
+        flex: none;
+        overflow-y: visible;
+    }
+    .sharing-modal-right {
+        flex: none;
+        overflow-y: visible;
+    }
 }
 
 /* Sharing Permissions Grid (Two columns layout) */

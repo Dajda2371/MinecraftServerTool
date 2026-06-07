@@ -1020,97 +1020,101 @@
                 </button>
             </div>
             <div class="modal-body sharing-modal-body" style="padding-top: var(--space-md);">
-                <!-- Share form -->
-                <form id="share-server-form" onsubmit="shareServer(event)" style="margin-bottom: var(--space-xl); padding-bottom: var(--space-lg); border-bottom: 1px solid var(--border-subtle);">
-                    <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="share-username">Username to share with</label>
-                            <input type="text" id="share-username" placeholder="Enter username..." required autocomplete="off">
+                <!-- Left Column: Share form -->
+                <div class="sharing-modal-left">
+                    <form id="share-server-form" onsubmit="shareServer(event)">
+                        <div style="display: grid; grid-template-columns: 1fr; gap: var(--space-md); margin-bottom: var(--space-md);">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="share-username">Username to share with</label>
+                                <input type="text" id="share-username" placeholder="Enter username..." required autocomplete="off">
+                            </div>
                         </div>
-                    </div>
-                    
-                    <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-md);">Configure Permissions</label>
-                    <div class="sharing-permissions-grid">
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Start Server</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-start">
-                                <span class="toggle-slider"></span>
-                            </label>
+                        
+                        <label style="display: block; font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: var(--space-md);">Configure Permissions</label>
+                        <div class="sharing-permissions-grid">
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Start Server</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-start">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Stop Server</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-stop">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Read Console</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-read-console">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Send Console Commands</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-write-console">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Read Files, Logs & Settings</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-read-files">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Write Files & Settings</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-write-files">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Read Firewall Rules</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-read-firewall">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
+                                <label style="margin-bottom: 0; font-weight: 600;">Write Firewall Rules</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="share-perm-write-firewall">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Stop Server</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-stop">
-                                <span class="toggle-slider"></span>
-                            </label>
+                        
+                        <div style="display: flex; justify-content: flex-end; margin-top: var(--space-md);">
+                            <button type="submit" class="btn btn-primary" id="btn-share-submit">Share Server</button>
                         </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Read Console</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-read-console">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Send Console Commands</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-write-console">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Read Files, Logs & Settings</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-read-files">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Write Files & Settings</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-write-files">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Read Firewall Rules</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-read-firewall">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group-toggle" style="border: 1px solid var(--border-subtle); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01);">
-                            <label style="margin-bottom: 0; font-weight: 600;">Write Firewall Rules</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="share-perm-write-firewall">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: flex-end;">
-                        <button type="submit" class="btn btn-primary" id="btn-share-submit">Share Server</button>
-                    </div>
-                </form>
+                    </form>
+                </div>
 
-                <!-- Currently shared users list -->
-                <h4>Currently Shared Users</h4>
-                <div class="sharing-list-container" style="margin-top: var(--space-md); overflow-x: auto;">
-                    <table class="firewall-table">
-                        <thead>
-                            <tr>
-                                <th>Username</th>
-                                <th>Permissions</th>
-                                <th style="text-align: right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sharing-rules-tbody">
-                            <!-- Share rows injected by JS -->
-                        </tbody>
-                    </table>
-                    <div id="sharing-empty-state" class="empty-state-small" style="display: none; padding: var(--space-xl); text-align: center; color: var(--text-muted);">
-                        This server is not shared with anyone yet.
+                <!-- Right Column: Currently shared users list -->
+                <div class="sharing-modal-right">
+                    <h4 style="margin-top: 0; margin-bottom: var(--space-md);">Currently Shared Users</h4>
+                    <div class="sharing-list-container" style="overflow-x: auto;">
+                        <table class="firewall-table">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Permissions</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sharing-rules-tbody">
+                                <!-- Share rows injected by JS -->
+                            </tbody>
+                        </table>
+                        <div id="sharing-empty-state" class="empty-state-small" style="display: none; padding: var(--space-xl); text-align: center; color: var(--text-muted);">
+                            This server is not shared with anyone yet.
+                        </div>
                     </div>
                 </div>
             </div>
