@@ -281,103 +281,91 @@ function renderServers() {
 
         let actionsHtml = '';
         if (status === 'downloading_mods') {
-            if (perms.can_read_files) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                   Logs
-                               </button>`;
-            }
-            if (perms.can_write_files) {
-                actionsHtml += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelModDownload('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                   Cancel
-                               </button>`;
-            }
+            const logsDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${logsDisabled} onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                               Logs
+                           </button>`;
+            const cancelDisabled = !perms.can_write_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-danger" ${cancelDisabled} onclick="event.stopPropagation(); cancelModDownload('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                               Cancel
+                           </button>`;
         } else if (status === 'creating') {
-            if (perms.can_read_files) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                   Logs
-                               </button>`;
-            }
-            if (perms.can_write_files) {
-                actionsHtml += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); cancelServerCreation('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                   Cancel
-                               </button>`;
-            }
+            const logsDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${logsDisabled} onclick="event.stopPropagation(); showCreationLogs('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                               Logs
+                           </button>`;
+            const cancelDisabled = !perms.can_write_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-danger" ${cancelDisabled} onclick="event.stopPropagation(); cancelServerCreation('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                               Cancel
+                           </button>`;
         } else if (status === 'install_required') {
-            if (perms.can_write_files) {
-                actionsHtml += `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" onclick="event.stopPropagation(); installServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                   Install
-                               </button>`;
-            }
-            if (isOwner) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                   Delete
-                               </button>`;
-            }
+            const installDisabled = !perms.can_write_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-success" style="background: var(--green); color: white;" ${installDisabled} onclick="event.stopPropagation(); installServer('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                               Install
+                           </button>`;
+            const deleteDisabled = !isOwner ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${deleteDisabled} onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                               Delete
+                           </button>`;
         } else if (!srv.eula_agreed) {
-            if (perms.can_start) {
-                actionsHtml += `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" onclick="event.stopPropagation(); agreeToEula('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                                   Agree to EULA
-                               </button>`;
-            }
-            if (isOwner) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                   Delete
-                               </button>`;
-            }
+            const eulaDisabled = !perms.can_start ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm" style="background: var(--yellow); color: var(--text-inverse); font-weight: 600;" ${eulaDisabled} onclick="event.stopPropagation(); agreeToEula('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                               Agree to EULA
+                           </button>`;
+            const deleteDisabled = !isOwner ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${deleteDisabled} onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                               Delete
+                           </button>`;
         } else if (isRunning) {
-            if (perms.can_read_console) {
-                actionsHtml += `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" onclick="event.stopPropagation(); showConsoleModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                                   Console
-                               </button>`;
-            }
-            if (perms.can_stop) {
-                actionsHtml += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); stopServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                                   Stop
-                               </button>`;
-            }
-            if (perms.can_read_files) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                   Files
-                               </button>
-                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                                   Logs
-                               </button>`;
-            }
+            const consoleDisabled = !perms.can_read_console ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-primary" style="background: var(--accent); color: white;" ${consoleDisabled} onclick="event.stopPropagation(); showConsoleModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                               Console
+                           </button>`;
+            const stopDisabled = !perms.can_stop ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-warning" ${stopDisabled} onclick="event.stopPropagation(); stopServer('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                               Stop
+                           </button>`;
+            const filesDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${filesDisabled} onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                               Files
+                           </button>`;
+            const logsDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${logsDisabled} onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                               Logs
+                           </button>`;
         } else {
-            if (perms.can_start) {
-                actionsHtml += `<button class="btn btn-sm btn-success" onclick="event.stopPropagation(); startServer('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                   Start
-                               </button>`;
-            }
-            if (isOwner) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                   Delete
-                               </button>`;
-            }
-            if (perms.can_read_files) {
-                actionsHtml += `<button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                   Files
-                               </button>
-                               <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                                   Logs
-                               </button>`;
-            }
+            const startDisabled = !perms.can_start ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-success" ${startDisabled} onclick="event.stopPropagation(); startServer('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                               Start
+                           </button>`;
+            const deleteDisabled = !isOwner ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${deleteDisabled} onclick="event.stopPropagation(); showDeleteModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                               Delete
+                           </button>`;
+            const filesDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${filesDisabled} onclick="event.stopPropagation(); showFileExplorerModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                               Files
+                           </button>`;
+            const logsDisabled = !perms.can_read_files ? 'disabled' : '';
+            actionsHtml += `<button class="btn btn-sm btn-ghost" ${logsDisabled} onclick="event.stopPropagation(); showServerLogsModal('${escapeAttr(srv.name)}')">
+                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                               Logs
+                           </button>`;
         }
 
         return `
