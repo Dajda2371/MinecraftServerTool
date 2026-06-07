@@ -2126,6 +2126,19 @@ input:checked + .toggle-slider:before {
     align-items: center;
 }
 
+.form-group-toggle:has(input:disabled) {
+    opacity: 0.5;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    cursor: not-allowed;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.toggle-switch input:disabled:checked + .toggle-slider {
+    background-color: rgba(16, 185, 129, 0.4);
+}
+
 /* Glowing border for inputs with unsaved changes */
 .qs-input-changed {
     border-color: var(--yellow) !important;
@@ -2458,4 +2471,18 @@ input:checked + .toggle-slider:before {
     overflow-y: auto;
     padding-right: var(--space-md);
     min-height: 0;
+}
+
+/* Sharing Permissions Grid (Two columns layout) */
+.sharing-permissions-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+@media (max-width: 600px) {
+    .sharing-permissions-grid {
+        grid-template-columns: 1fr;
+    }
 }

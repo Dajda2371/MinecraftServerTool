@@ -920,6 +920,7 @@ document.addEventListener('keydown', (e) => {
         hideServerLogsModal();
         hideFirewallModal();
         hideModsModal();
+        hideSharingModal();
         closeUserSettingsModal();
         closeAdminSettingsModal();
     }
@@ -1042,6 +1043,7 @@ async function installServer(name) {
 // --- Init ---
 document.addEventListener('DOMContentLoaded', () => {
     checkAuth();
+    setupSharingEventListeners();
 });
 
 // --- Upload Mods State & Functions ---
@@ -3126,7 +3128,7 @@ async function showSharingModal(name) {
     document.getElementById('share-username').disabled = false;
     document.getElementById('btn-share-submit').textContent = 'Share Server';
     
-    // Clear checkboxes
+    // Clear and enable checkboxes
     const checkboxes = [
         'share-perm-start',
         'share-perm-stop',
@@ -3139,8 +3141,13 @@ async function showSharingModal(name) {
     ];
     checkboxes.forEach(id => {
         const cb = document.getElementById(id);
-        if (cb) cb.checked = false;
+        if (cb) {
+            cb.checked = false;
+            cb.disabled = false;
+        }
     });
+
+    updateSharingTogglesState();
 
     document.getElementById('sharing-modal-overlay').classList.add('is-visible');
     await loadServerShares();
@@ -3225,6 +3232,8 @@ function editShare(shareJsonEscaped) {
     document.getElementById('share-perm-write-files').checked = !!share.can_write_files;
     document.getElementById('share-perm-read-firewall').checked = !!share.can_read_firewall;
     document.getElementById('share-perm-write-firewall').checked = !!share.can_write_firewall;
+
+    updateSharingTogglesState();
 }
 
 async function shareServer(e) {
@@ -3260,6 +3269,26 @@ async function shareServer(e) {
         document.getElementById('share-username').value = '';
         document.getElementById('share-username').disabled = false;
         btn.textContent = 'Share Server';
+
+        // Re-enable and update checkboxes
+        const checkboxes = [
+            'share-perm-start',
+            'share-perm-stop',
+            'share-perm-read-console',
+            'share-perm-write-console',
+            'share-perm-read-files',
+            'share-perm-write-files',
+            'share-perm-read-firewall',
+            'share-perm-write-firewall'
+        ];
+        checkboxes.forEach(id => {
+            const cb = document.getElementById(id);
+            if (cb) {
+                cb.checked = false;
+                cb.disabled = false;
+            }
+        });
+        updateSharingTogglesState();
         
         await loadServerShares();
     } catch (err) {
@@ -3283,6 +3312,43 @@ async function revokeShare(username) {
         await loadServerShares();
     } catch (err) {
         showToast(`Failed to revoke access: ${err.message}`, 'error');
+    }
+}
+
+function updateSharingTogglesState() {
+    const readFiles = document.getElementById('share-perm-read-files');
+    const readConsole = document.getElementById('share-perm-read-console');
+    const writeConsole = document.getElementById('share-perm-write-console');
+    const stopServer = document.getElementById('share-perm-stop');
+
+    if (readFiles && readConsole) {
+        if (readFiles.checked) {
+            readConsole.checked = true;
+            readConsole.disabled = true;
+        } else {
+            readConsole.disabled = false;
+        }
+    }
+
+    if (writeConsole && stopServer) {
+        if (writeConsole.checked) {
+            stopServer.checked = true;
+            stopServer.disabled = true;
+        } else {
+            stopServer.disabled = false;
+        }
+    }
+}
+
+function setupSharingEventListeners() {
+    const readFiles = document.getElementById('share-perm-read-files');
+    const writeConsole = document.getElementById('share-perm-write-console');
+
+    if (readFiles) {
+        readFiles.addEventListener('change', updateSharingTogglesState);
+    }
+    if (writeConsole) {
+        writeConsole.addEventListener('change', updateSharingTogglesState);
     }
 }
 
