@@ -1,4 +1,8 @@
 import os
+import re
+import uuid
+import shutil
+import zipfile
 import asyncio
 import threading
 from pathlib import Path
@@ -8,6 +12,7 @@ from contextlib import asynccontextmanager
 import socketio
 from fastapi import FastAPI, Depends, HTTPException, Cookie, Response, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
+from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
@@ -24,6 +29,7 @@ import api.post.server.stop
 import api.post.server.hostname
 import api.post.server.memory
 import api.post.server.delete
+import api.post.server.world
 import api.post.user.assign_memory
 import api.post.user.reset_password
 import api.post.user.create
@@ -188,6 +194,64 @@ def check_server_permission(server_name: str, user: str, permission: str) -> boo
         return bool(share.get("can_read_console", False)) or bool(share.get("can_read_files", False))
         
     return bool(share.get(perm_key, False))
+
+# --- Server creation helpers (shared by JSON and world-upload endpoints) ---
+SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+SUPPORTED_SERVER_TYPES = {"vanilla", "spigot", "forge", "neoforge"}
+_exports_in_progress: set = set()
+
+def _validate_server_creation(current_user: str, name: str, server_type: str, version: str, owner: str, memory_mb: int):
+    """
+    Validate a create-server request. Returns (owner, server_type) with the
+    owner forced to the caller for non-admins. Raises HTTPException on error.
+    """
+    if not name or not version:
+        raise HTTPException(status_code=400, detail="name and version are required")
+    if not SERVER_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="Server name may only contain letters, numbers, hyphens and underscores")
+    server_type = server_type.lower()
+    if server_type not in SUPPORTED_SERVER_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported server type '{server_type}'")
+
+    # Force owner to current user if not admin
+    if current_user != 'admin':
+        owner = current_user
+
+    # Only admin can create servers for other owners
+    if current_user != 'admin' and owner != current_user:
+        raise HTTPException(status_code=403, detail="Access denied: Cannot create server for another user")
+
+    if memory_mb < 512:
+        raise HTTPException(status_code=400, detail="memory_mb must be at least 512")
+
+    # Validate against user memory limit (admin bypasses)
+    if current_user != 'admin':
+        user_info = api.db.get_user_info(owner)
+        if user_info:
+            memory_limit = user_info['memory_limit']
+            servers = api.db.get_all_servers()
+            used = sum(srv.get('memory_mb', 1024) for srv in servers if srv['owner'] == owner)
+            if (used + memory_mb) > memory_limit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot allocate {memory_mb} MB. Limit: {memory_limit} MB, already used: {used} MB."
+                )
+
+    if api.db.get_server_info(name):
+        raise HTTPException(status_code=409, detail=f"A server named '{name}' already exists")
+
+    return owner, server_type
+
+def _save_upload_to_path(upload: UploadFile, dest_path: str):
+    """Stream an UploadFile to disk without loading it into memory."""
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    with open(dest_path, "wb") as out:
+        shutil.copyfileobj(upload.file, out, 1024 * 1024)
+
+def _quick_validate_world_zip(zip_path: str):
+    """Raise if the archive is not a zip containing a single Minecraft world."""
+    with zipfile.ZipFile(zip_path) as zf:
+        api.post.server.world.find_world_root(zf)
 
 # --- Pydantic Models for POST requests ---
 class LoginRequest(BaseModel):
@@ -606,37 +670,11 @@ async def get_server_creation_logs(name: str, current_user: str = Depends(get_cu
 @fastapi_app.post("/api/server/create", status_code=202)
 async def create_server(data: CreateServerRequest, current_user: str = Depends(get_current_user)):
     name = data.name.strip()
-    server_type = data.type.strip()
     version = data.version.strip()
-    owner = data.owner.strip()
-
-    if not name or not version:
-        raise HTTPException(status_code=400, detail="name and version are required")
-
-    # Force owner to current user if not admin
-    if current_user != 'admin':
-        owner = current_user
-
-    # Only admin can create servers for other owners
-    if current_user != 'admin' and owner != current_user:
-        raise HTTPException(status_code=403, detail="Access denied: Cannot create server for another user")
-
     memory_mb = data.memory_mb
-    if memory_mb < 512:
-        raise HTTPException(status_code=400, detail="memory_mb must be at least 512")
-
-    # Validate against user memory limit (admin bypasses)
-    if current_user != 'admin':
-        user_info = api.db.get_user_info(owner)
-        if user_info:
-            memory_limit = user_info['memory_limit']
-            servers = api.db.get_all_servers()
-            used = sum(srv.get('memory_mb', 1024) for srv in servers if srv['owner'] == owner)
-            if (used + memory_mb) > memory_limit:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot allocate {memory_mb} MB. Limit: {memory_limit} MB, already used: {used} MB."
-                )
+    owner, server_type = _validate_server_creation(
+        current_user, name, data.type.strip(), version, data.owner.strip(), memory_mb
+    )
 
     threading.Thread(
         target=api.post.server.create.create_server,
@@ -644,11 +682,58 @@ async def create_server(data: CreateServerRequest, current_user: str = Depends(g
         kwargs={"owner": owner, "memory_mb": memory_mb},
         daemon=True
     ).start()
-    
+
     # Broadcast status change instantly to clients
     await sio.emit("servers_updated", {})
-    
+
     return {"message": f"Creation of '{name}' started in background."}
+
+@fastapi_app.post("/api/server/create-from-world", status_code=202)
+async def create_server_from_world(
+    name: str = Form(...),
+    type: str = Form("spigot"),
+    version: str = Form(...),
+    memory_mb: int = Form(1024),
+    owner: str = Form("admin"),
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user),
+):
+    """Create a server whose world is an uploaded single-player save (.zip)."""
+    name = name.strip()
+    version = version.strip()
+    owner, server_type = _validate_server_creation(
+        current_user, name, type.strip(), version, owner.strip(), memory_mb
+    )
+
+    if not (file.filename or "").lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="World must be uploaded as a .zip archive")
+
+    server_dir = os.path.abspath(f"data/servers/{name}")
+    zip_path = os.path.join(server_dir, api.post.server.world.IMPORT_ARCHIVE_NAME)
+
+    try:
+        await asyncio.to_thread(_save_upload_to_path, file, zip_path)
+        await asyncio.to_thread(_quick_validate_world_zip, zip_path)
+    except zipfile.BadZipFile:
+        shutil.rmtree(server_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid .zip archive")
+    except api.post.server.world.WorldImportError as e:
+        shutil.rmtree(server_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        shutil.rmtree(server_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Failed to store uploaded world: {e}")
+
+    threading.Thread(
+        target=api.post.server.create.create_server,
+        args=(name, server_type, version),
+        kwargs={"owner": owner, "memory_mb": memory_mb, "world_archive": zip_path},
+        daemon=True
+    ).start()
+
+    await sio.emit("servers_updated", {})
+
+    return {"message": f"Creation of '{name}' from uploaded world started in background."}
 
 @fastapi_app.get("/api/forge/versions")
 async def get_forge_versions_endpoint(mc_version: str, current_user: str = Depends(get_current_user)):
@@ -955,6 +1040,95 @@ async def upload_server_files(
         return {"message": f"Successfully uploaded/saved {saved_count} file(s)."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save files: {str(e)}")
+
+# ============================================================================
+# World Export (download as single-player save)
+# ============================================================================
+@fastapi_app.post("/api/server/{name}/world/export")
+async def export_server_world(name: str, current_user: str = Depends(get_current_user)):
+    """
+    Build a single-player compatible zip of the server's world. Returns a
+    one-time token; the archive is fetched via the GET endpoint below.
+    """
+    name = name.strip()
+    if not check_server_permission(name, current_user, "read_files"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    info = api.db.get_server_info(name)
+    if not info:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    status = api.post.server.run.get_server_status(name)
+    status_str = status.get("status", "") if isinstance(status, dict) else ""
+    if status_str in ("running", "CREATING", "DOWNLOADING_MODS"):
+        raise HTTPException(
+            status_code=409,
+            detail="Stop the server before exporting the world so the archive is consistent."
+        )
+
+    level = api.post.server.world.get_level_name(name)
+    world_dir = os.path.join(api.post.server.world.server_dir(name), level)
+    if not os.path.isfile(os.path.join(world_dir, "level.dat")):
+        raise HTTPException(status_code=404, detail="This server has no world yet. Start it once to generate one.")
+
+    if name in _exports_in_progress:
+        raise HTTPException(status_code=409, detail="A world export is already in progress for this server.")
+
+    _exports_in_progress.add(name)
+    try:
+        api.post.server.world.sweep_stale_exports(name)
+        token = uuid.uuid4().hex
+        dest = os.path.join(
+            api.post.server.world.server_dir(name),
+            api.post.server.world.EXPORTS_DIRNAME,
+            f"{token}.zip",
+        )
+        await asyncio.to_thread(
+            api.post.server.world.export_world_archive, name, info.get("type", ""), dest
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export world: {e}")
+    finally:
+        _exports_in_progress.discard(name)
+
+    return {
+        "token": token,
+        "filename": f"{name}-world.zip",
+        "size": os.path.getsize(dest),
+    }
+
+@fastapi_app.get("/api/server/{name}/world/export/{token}")
+async def download_server_world(name: str, token: str, current_user: str = Depends(get_current_user)):
+    """Serve a previously built world archive and delete it afterwards."""
+    name = name.strip()
+    if not check_server_permission(name, current_user, "read_files"):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        raise HTTPException(status_code=400, detail="Invalid export token")
+
+    path = os.path.join(
+        api.post.server.world.server_dir(name),
+        api.post.server.world.EXPORTS_DIRNAME,
+        f"{token}.zip",
+    )
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Export not found or already downloaded")
+
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"{name}-world.zip",
+        background=BackgroundTask(_remove_file_quietly, path),
+    )
+
+def _remove_file_quietly(path: str):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 @fastapi_app.post("/api/server/agree-eula")
 async def agree_eula(data: ServerNameRequest, current_user: str = Depends(get_current_user)):

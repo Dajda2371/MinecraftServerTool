@@ -39,6 +39,12 @@ def enable_https_workflow(domain: str):
 
     location / {{
         proxy_pass http://minecraft-server-tool:8000;
+        # Large world uploads/downloads: no body size cap, stream the upload
+        # straight through, and allow slow archive builds to finish.
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -135,6 +141,12 @@ server {{
 
     location / {{
         proxy_pass http://minecraft-server-tool:8000;
+        # Large world uploads/downloads: no body size cap, stream the upload
+        # straight through, and allow slow archive builds to finish.
+        client_max_body_size 0;
+        proxy_request_buffering off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

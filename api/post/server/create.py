@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import time
 import threading
 
@@ -7,8 +8,9 @@ import docker
 import requests
 
 import api.get.lastbuildtoolsversion
-from api.db import update_server_info, get_server_info
+from api.db import update_server_info, get_server_info, delete_server as db_delete_server
 from api.get.forge import get_forge_versions
+from api.post.server import world as world_tools
 from api.post.server.mounts import (
     SERVER_DATA_VOLUME,
     server_data_mount,
@@ -163,6 +165,62 @@ def follow_log_file(path, stop_event, server_name=None):
                     time.sleep(0.25)
     except FileNotFoundError:
         pass
+
+
+def _creation_log(server_name, line):
+    """
+    Append a line to the server's creation.log (what the logs modal loads on
+    open) and push it live through the Socket.IO callback.
+    """
+    log_path = os.path.join("data", "servers", server_name, "creation.log")
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception as e:
+        print(f"[CreationLog] Could not write creation.log: {e}")
+    print(line)
+    if log_callback:
+        try:
+            log_callback(server_name, line + "\n")
+        except Exception as e:
+            print(f"[LogCallback Error] {e}")
+
+
+def _import_world_if_requested(server_name, world_archive):
+    """
+    Extract an uploaded single-player world into the server directory.
+    Returns None on success (or when no archive was supplied), otherwise an
+    error message.
+    """
+    if not world_archive:
+        return None
+
+    try:
+        world_tools.import_world_archive(
+            server_name,
+            world_archive,
+            log=lambda line: _creation_log(server_name, line),
+        )
+    except Exception as e:
+        return f"Failed to import world: {e}"
+
+    # The user may have cancelled creation while we were extracting; cancel
+    # deletes the DB row and the directory, but has no container to stop.
+    if get_server_info(server_name) is None:
+        return "Creation cancelled."
+    return None
+
+
+def _abort_creation(server_name, message):
+    """Log the failure, drop the half-built server and its DB row."""
+    _creation_log(server_name, f"[World] {message}")
+    shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
+    try:
+        db_delete_server(server_name)
+    except Exception as e:
+        print(f"[DB] Warning: could not remove server '{server_name}': {e}")
+    return message
 
 
 def download_build_tools(server_name):
@@ -362,7 +420,7 @@ def run_build_tools(server_name, server_version, memory_mb=1024):
     return False, "Failed to create server."
 
 
-def create_server(server_name, server_type, server_version, owner="admin", hostname=None, memory_mb=1024):
+def create_server(server_name, server_type, server_version, owner="admin", hostname=None, memory_mb=1024, world_archive=None):
     """
     Create a new Minecraft server.
 
@@ -373,6 +431,8 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
         owner: Owner username
         hostname: Optional hostname for Infrared routing (e.g., "survival.mc.davidbenes.cz")
         memory_mb: Memory allocation in MB for the server
+        world_archive: Optional path to an uploaded single-player world .zip
+            that becomes the server's world (extracted after the jar step)
     """
     print("creating server...")
     os.makedirs(f"data/servers/{server_name}", exist_ok=True)
@@ -397,9 +457,12 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             jar_name = download_vanilla_jar(server_name, server_version)
         except Exception as e:
             print(f"Failed to download vanilla JAR: {e}")
-            import shutil
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
+
+        err = _import_world_if_requested(server_name, world_archive)
+        if err:
+            return _abort_creation(server_name, err)
 
         import time
         date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
@@ -445,6 +508,10 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
         success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
         if success:
+            err = _import_world_if_requested(server_name, world_archive)
+            if err:
+                return _abort_creation(server_name, err)
+
             import time
             date_str = time.strftime("#%a %b %d %H:%M:%S UTC %Y")
             eula_content = (
@@ -481,7 +548,6 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             print(f"  Online-mode: true (backend handles auth, Infrared routes only)")
             return f"Server '{server_name}' created successfully."
         else:
-            import shutil
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return message
 
@@ -537,9 +603,12 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
                 raise RuntimeError(message)
         except Exception as e:
             print(f"Failed to download Forge installer: {e}")
-            import shutil
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
+
+        err = _import_world_if_requested(server_name, world_archive)
+        if err:
+            return _abort_creation(server_name, err)
 
         # Update DB to the installer path
         installer_jar_path = f"data/servers/{server_name}/{jar_name}"
@@ -609,9 +678,12 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
                 raise RuntimeError(message)
         except Exception as e:
             print(f"Failed to download NeoForge installer: {e}")
-            import shutil
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
             return "Failed to create server."
+
+        err = _import_world_if_requested(server_name, world_archive)
+        if err:
+            return _abort_creation(server_name, err)
 
         # Update DB to the installer path
         installer_jar_path = f"data/servers/{server_name}/{jar_name}"

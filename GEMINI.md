@@ -113,6 +113,13 @@ The `api/post/server/create.py` script handles the creation of new Minecraft ser
 
 Unlike the previous Velocity-based setup, Infrared does NOT require a proxy plugin or `paper-global.yml` on the backend — it proxies at the Minecraft handshake level.
 
+## World Import / Export (`api/post/server/world.py`)
+
+*   **Create from a single-player world:** the Create Server modal accepts an optional `.zip` of a save folder (the one containing `level.dat`). `POST /api/server/create-from-world` streams it to `data/servers/<name>/.world-import.zip`, validates it, and the normal creation thread extracts it into `world/` after the jar is downloaded/built. The archive is always extracted in the **vanilla layout** (`world/DIM-1`, `world/DIM1`); Spigot/Paper migrate that into `world_nether` / `world_the_end` themselves on first boot, so it must not be pre-split.
+*   **Download as a single-player world:** Settings → *Download World* calls `POST /api/server/<name>/world/export` (builds `data/servers/<name>/.exports/<token>.zip`, rejected with 409 while the server is running) and then navigates to `GET /api/server/<name>/world/export/<token>`, which serves the file and deletes it. For Bukkit-type servers `<level>_nether/DIM-1` and `<level>_the_end/DIM1` are folded back under the top-level `<name>/` folder so the client finds them.
+*   Both paths write directly to `data/servers/<name>/` (like the file explorer uploads), so they require `mc-tool` to run inside Docker with `mc-data` mounted at `/app/data`.
+*   The nginx templates in `api/https.py` set `client_max_body_size 0` and 900 s proxy timeouts so large worlds pass through the HTTPS proxy.
+
 ## Dependencies
 
 *   **`wget`:** Required to download server files. Install: `brew install wget` (macOS) or `apt-get install wget` (Linux)

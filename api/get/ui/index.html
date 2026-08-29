@@ -163,6 +163,20 @@
                     <input type="number" id="server-memory" value="1024" min="512" step="256" required>
                     <span class="form-hint">RAM allocated to this server (min 512 MB)</span>
                 </div>
+                <div class="form-group">
+                    <label for="server-world-file">World (optional)</label>
+                    <input type="file" id="server-world-file" accept=".zip,application/zip">
+                    <span class="form-hint">Upload a zipped single-player save (the folder containing level.dat). Leave empty for a new world.</span>
+                </div>
+                <div id="world-progress-container" class="progress-bar-container" style="display: none; margin-bottom: var(--space-lg);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs); font-size: 0.75rem;">
+                        <span id="world-progress-status" style="color: var(--text-secondary);">Uploading world...</span>
+                        <span id="world-progress-percent" style="font-weight: 600; color: var(--accent);">0%</span>
+                    </div>
+                    <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                        <div id="world-progress-bar" class="progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 10px; transition: width 0.15s ease;"></div>
+                    </div>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-ghost" onclick="hideCreateModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="btn-submit-create">
@@ -431,6 +445,13 @@
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm); flex: 1; min-width: 0;">
                             <span style="font-weight: 600; font-size: 0.85rem;">Firewall</span>
                             <span style="font-size: 0.725rem; color: var(--text-muted); white-space: normal; line-height: 1.3; text-align: left;">Manage exposed container ports (TCP & UDP)</span>
+                        </div>
+                    </button>
+                    <button class="btn btn-ghost" id="btn-settings-download-world" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsDownloadWorld()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm); flex: 1; min-width: 0;">
+                            <span style="font-weight: 600; font-size: 0.85rem;">Download World</span>
+                            <span style="font-size: 0.725rem; color: var(--text-muted); white-space: normal; line-height: 1.3; text-align: left;">Export the world as a single-player save (.zip) — server must be stopped</span>
                         </div>
                     </button>
                     <button class="btn btn-ghost owner-only" id="btn-settings-sharing" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsSharing()">

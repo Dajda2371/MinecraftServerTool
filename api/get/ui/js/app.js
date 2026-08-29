@@ -485,13 +485,31 @@ function showCreateModal() {
     setTimeout(() => document.getElementById('server-name').focus(), 100);
 }
 
+let worldUploadInProgress = false;
+
+function resetWorldUploadProgress() {
+    const container = document.getElementById('world-progress-container');
+    if (!container) return;
+    container.style.display = 'none';
+    document.getElementById('world-progress-bar').style.width = '0%';
+    document.getElementById('world-progress-percent').textContent = '0%';
+    document.getElementById('world-progress-status').textContent = 'Uploading world...';
+}
+
 function hideCreateModal(e) {
     if (e && e.target !== e.currentTarget) return;
+    if (worldUploadInProgress) {
+        if (!confirm("A world upload is in progress. Closing this window will cancel it. Continue?")) {
+            return;
+        }
+        worldUploadInProgress = false;
+    }
     document.getElementById('modal-overlay').classList.remove('is-visible');
     document.getElementById('create-server-form').reset();
     document.getElementById('forge-version-group').style.display = 'none';
     document.getElementById('version-label').textContent = 'Version';
     document.getElementById('server-version').placeholder = 'e.g. 1.21.1';
+    resetWorldUploadProgress();
 }
 
 async function createServer(e) {
@@ -522,9 +540,23 @@ async function createServer(e) {
         return;
     }
 
+    const worldInput = document.getElementById('server-world-file');
+    const worldFile = worldInput && worldInput.files ? worldInput.files[0] : null;
+    if (worldFile && !worldFile.name.toLowerCase().endsWith('.zip')) {
+        showToast('The world must be a .zip archive', 'error');
+        return;
+    }
+
     const btn = document.getElementById('btn-submit-create');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Creating...';
+    btn.innerHTML = worldFile
+        ? '<span class="spinner"></span> Uploading...'
+        : '<span class="spinner"></span> Creating...';
+
+    if (worldFile) {
+        submitCreateWithWorld({ name, type, version, memory_mb }, worldFile, btn);
+        return;
+    }
 
     try {
         const data = await apiFetch('/api/server/create', 'POST', { name, type, version, memory_mb });
@@ -535,12 +567,86 @@ async function createServer(e) {
     } catch (err) {
         showToast(`Failed to create server: ${err.message}`, 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = `
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Create Server
-        `;
+        resetCreateButton(btn);
     }
+}
+
+function resetCreateButton(btn) {
+    btn.disabled = false;
+    btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Create Server
+    `;
+}
+
+function submitCreateWithWorld(fields, worldFile, btn) {
+    const progressContainer = document.getElementById('world-progress-container');
+    const progressBar = document.getElementById('world-progress-bar');
+    const progressPercent = document.getElementById('world-progress-percent');
+    const progressStatus = document.getElementById('world-progress-status');
+
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
+    progressStatus.textContent = 'Uploading world...';
+    worldUploadInProgress = true;
+
+    const formData = new FormData();
+    formData.append('name', fields.name);
+    formData.append('type', fields.type);
+    formData.append('version', fields.version);
+    formData.append('memory_mb', String(fields.memory_mb));
+    formData.append('file', worldFile);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/server/create-from-world', true);
+
+    xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            if (percent === 100) {
+                progressStatus.textContent = 'Validating archive...';
+            }
+        }
+    });
+
+    const finish = () => {
+        worldUploadInProgress = false;
+        resetCreateButton(btn);
+    };
+
+    xhr.onload = function () {
+        let respData = {};
+        try {
+            respData = JSON.parse(xhr.responseText);
+        } catch (e) {}
+
+        finish();
+        if (xhr.status === 401) {
+            window.location.href = '/login.html';
+            return;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+            showToast(respData.message || `Server '${fields.name}' creation started!`, 'success');
+            hideCreateModal();
+            setTimeout(loadServers, 1000);
+            // Open the creation logs so the world import progress is visible
+            setTimeout(() => showCreationLogs(fields.name), 1200);
+        } else {
+            showToast(`Failed to create server: ${respData.error || respData.detail || `HTTP ${xhr.status}`}`, 'error');
+            resetWorldUploadProgress();
+        }
+    };
+
+    xhr.onerror = function () {
+        finish();
+        showToast('Network error occurred while uploading the world.', 'error');
+        resetWorldUploadProgress();
+    };
+
+    xhr.send(formData);
 }
 
 // --- Delete Server ---
@@ -1869,6 +1975,12 @@ function showServerSettingsModal(name) {
         btnFirewall.style.display = (perms.can_read_firewall || perms.can_write_firewall) ? 'flex' : 'none';
     }
     
+    // Download World: visible if they can read files
+    const btnDownloadWorld = document.getElementById('btn-settings-download-world');
+    if (btnDownloadWorld) {
+        btnDownloadWorld.style.display = perms.can_read_files ? 'flex' : 'none';
+    }
+
     // Sharing: visible only to owner/admin
     const btnSharing = document.getElementById('btn-settings-sharing');
     if (btnSharing) {
@@ -1901,6 +2013,31 @@ function triggerSettingsQuickSettings() {
     setTimeout(() => {
         showQuickSettingsModal(name);
     }, 200);
+}
+
+function triggerSettingsDownloadWorld() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    downloadWorld(name);
+}
+
+async function downloadWorld(name) {
+    const srv = servers.find(s => s.name === name);
+    if (srv && (srv.status || '').toLowerCase() === 'running') {
+        showToast('Stop the server before downloading its world.', 'warning');
+        return;
+    }
+
+    const enc = encodeURIComponent(name);
+    showToast(`Preparing world archive for ${name}... this can take a while for large worlds.`, 'info');
+    try {
+        const data = await apiFetch(`/api/server/${enc}/world/export`, 'POST');
+        showToast(`World archive ready (${formatBytes(data.size || 0)}). Downloading...`, 'success');
+        window.location.href = `/api/server/${enc}/world/export/${encodeURIComponent(data.token)}`;
+    } catch (err) {
+        showToast(`Failed to export world: ${err.message}`, 'error');
+    }
 }
 
 let activeQuickSettingsServer = null;
