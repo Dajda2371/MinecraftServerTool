@@ -1,7 +1,11 @@
 name: Release
 
-# Build and push the project's Docker images to GHCR whenever a version
-# tag (e.g. v1.0.0) is pushed.
+# On every version tag (e.g. v1.0.0):
+#   1. build the two Docker images and push them to GHCR, tagged with the
+#      version and "latest";
+#   2. create a GitHub Release for the tag with the deploy/ assets attached
+#      (deploy.sh, docker-compose.yml, .env.example) and release notes that
+#      list the exact image references + digests.
 on:
   push:
     tags:
@@ -13,6 +17,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      tool-digest: ${{ steps.build-tool.outputs.digest }}
+      base-digest: ${{ steps.build-base.outputs.digest }}
 
     steps:
       - name: Checkout
@@ -36,9 +43,10 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push mc-tool
+        id: build-tool
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -57,9 +65,10 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/mc-server-base
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push mc-server-base
+        id: build-base
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -69,3 +78,76 @@ jobs:
           labels: ${{ steps.meta-base.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare release notes
+        env:
+          TOOL_DIGEST: ${{ needs.build-and-push.outputs.tool-digest }}
+          BASE_DIGEST: ${{ needs.build-and-push.outputs.base-digest }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          TOOL_IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr "[:upper:]" "[:lower:]")"
+          BASE_IMAGE="ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr "[:upper:]" "[:lower:]")/mc-server-base"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          case "$VERSION" in
+            *-*) TAGS="\`${VERSION}\`" ;;             # prerelease: no "latest"
+            *)   TAGS="\`${VERSION}\`, \`latest\`" ;;
+          esac
+
+          cat > "$NOTES" <<NOTES_EOF
+          ## Container images
+
+          | Image | Tag | Digest |
+          | --- | --- | --- |
+          | \`${TOOL_IMAGE}\` | ${TAGS} | \`${TOOL_DIGEST}\` |
+          | \`${BASE_IMAGE}\` | ${TAGS} | \`${BASE_DIGEST}\` |
+
+          Pinned references:
+
+          \`\`\`
+          ${TOOL_IMAGE}:${VERSION}
+          ${BASE_IMAGE}:${VERSION}
+          ${TOOL_IMAGE}@${TOOL_DIGEST}
+          ${BASE_IMAGE}@${BASE_DIGEST}
+          \`\`\`
+
+          ## Deploy
+
+          Download the attached \`deploy.sh\`, \`docker-compose.yml\` and \`.env.example\`
+          into one directory on the host, then:
+
+          \`\`\`bash
+          cp .env.example .env      # set POSTGRES_PASSWORD, and VERSION=${VERSION}
+          chmod +x deploy.sh
+          ./deploy.sh
+          \`\`\`
+
+          Re-run \`./deploy.sh\` after bumping \`VERSION\` in \`.env\` to upgrade.
+          NOTES_EOF
+
+          echo "NOTES_PATH=$NOTES" >> "$GITHUB_ENV"
+          cat "$NOTES"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: ${{ env.NOTES_PATH }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            deploy/deploy.sh
+            deploy/docker-compose.yml
+            deploy/.env.example

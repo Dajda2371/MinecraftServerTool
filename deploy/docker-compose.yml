@@ -1,0 +1,96 @@
+# ============================================================================
+# Docker Compose — MinecraftServerTool (production / GHCR images)
+# ============================================================================
+# This file is shipped with every GitHub Release next to deploy.sh. Unlike the
+# root docker-compose.yml it does NOT build anything: all images are pulled
+# from GHCR, pinned by VERSION.
+#
+# Configure via an .env file next to this compose file (see .env.example):
+#   VERSION=1.2.3                 # image tag, defaults to "latest"
+#   POSTGRES_PASSWORD=...         # database password
+#
+# Run ./deploy.sh to pull the images and (re)start the stack.
+#
+# Services:
+#   - mc-tool:   management web UI + CLI, spawns child server containers via
+#                the Docker socket using SERVER_BASE_IMAGE
+#   - postgres:  PostgreSQL 16 (internal only, no host port)
+#   - infrared:  hostname-based Minecraft proxy on port 25565
+#
+# Child server containers are spawned dynamically by mc-tool on mc-net and
+# store their data in the shared mc-data volume.
+# ============================================================================
+
+services:
+  mc-tool:
+    image: ghcr.io/dajda2371/minecraftservertool:${VERSION:-latest}
+    container_name: minecraft-server-tool
+    ports:
+      # Web management interface (admin only, optional)
+      - "8000:8000"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mcserver
+      POSTGRES_USER: mcserver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcserver}
+      # Image used for every spawned Minecraft server container.
+      SERVER_BASE_IMAGE: ghcr.io/dajda2371/mc-server-base:${VERSION:-latest}
+    volumes:
+      # Docker socket — allows mc-tool to create/control child containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Persistent app data (server directories + Infrared config)
+      - mc-data:/app/data
+    networks:
+      - mc-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mc-postgres
+    environment:
+      POSTGRES_DB: mcserver
+      POSTGRES_USER: mcserver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcserver}
+    volumes:
+      - mc-postgres-data:/var/lib/postgresql/data
+    networks:
+      - mc-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcserver -d mcserver"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  infrared:
+    image: haveachin/infrared:latest
+    container_name: mc-infrared
+    ports:
+      # Infrared proxy — the ONLY port players connect to
+      - "25565:25565"
+    volumes:
+      # Read the infrared/ subpath of the shared volume so mc-tool's
+      # generated config.yml + proxies/*.yml show up at /etc/infrared.
+      - type: volume
+        source: mc-data
+        target: /etc/infrared
+        volume:
+          subpath: infrared
+    networks:
+      - mc-net
+    depends_on:
+      - mc-tool
+    restart: unless-stopped
+
+volumes:
+  mc-data:
+  mc-postgres-data:
+
+networks:
+  mc-net:
+    name: mc-net
+    driver: bridge
