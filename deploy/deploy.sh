@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Pull the published images and (re)start the MinecraftServerTool stack.
+# Expects docker-compose.yml (the repo's root compose file, attached to every
+# GitHub Release) and an optional .env next to this script.
 # Re-run this any time to deploy a new release.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -19,7 +21,7 @@ echo ">> Pulling spawned-server base image (used by mc-tool to launch servers)..
 docker pull "ghcr.io/dajda2371/mc-server-base:${VERSION}"
 
 echo ">> Starting stack..."
-docker compose up -d
+docker compose up -d --no-build
 
 echo ">> Status:"
 docker compose ps

@@ -23,8 +23,20 @@
 #   - mc-server-base (build-only):
 #       • Builds the base image used for every child server container.
 #       • Never runs as a long-lived service — `docker compose build`
-#         produces mc-server-base:latest which mc-tool then references
-#         when spawning servers.
+#         produces ghcr.io/dajda2371/mc-server-base:${VERSION} which
+#         mc-tool then references (via SERVER_BASE_IMAGE) when spawning
+#         servers.
+#
+# Images:
+#   - Both mc-tool and mc-server-base are named after their GHCR images,
+#     tagged with ${VERSION} (default "latest"). This single file serves two
+#     workflows:
+#       • Development:  `docker compose up -d --build` (or ./build.sh) builds
+#                       the images locally under those names.
+#       • Deployment:   this file is attached to every GitHub Release next to
+#                       deploy/deploy.sh, which pulls the published images
+#                       from GHCR instead of building. Set VERSION in .env
+#                       to pin a release.
 #
 #   - Child containers (NOT defined here — spawned dynamically by mc-tool):
 #       • One per Minecraft server
@@ -54,11 +66,13 @@
 # Credentials:
 #   - POSTGRES_PASSWORD defaults to "mcserver" for dev. Override it in
 #     production via an .env file next to this compose file, e.g.:
+#       VERSION=1.2.3
 #       POSTGRES_PASSWORD=your-strong-password
 # ============================================================================
 
 services:
   mc-tool:
+    image: ghcr.io/dajda2371/minecraftservertool:${VERSION:-latest}
     build: .
     container_name: minecraft-server-tool
     ports:
@@ -70,6 +84,9 @@ services:
       POSTGRES_DB: mcserver
       POSTGRES_USER: mcserver
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcserver}
+      # Image used for every spawned Minecraft server container (see the
+      # mc-server-base service below, which builds it locally in dev).
+      SERVER_BASE_IMAGE: ghcr.io/dajda2371/mc-server-base:${VERSION:-latest}
     volumes:
       # Docker socket — allows mc-tool to create/control child containers
       - /var/run/docker.sock:/var/run/docker.sock
@@ -127,7 +144,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.server
-    image: mc-server-base:latest
+    image: ghcr.io/dajda2371/mc-server-base:${VERSION:-latest}
     command: ["true"]
     profiles: ["build-only"]
 

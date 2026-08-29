@@ -3,9 +3,9 @@ name: Release
 # On every version tag (e.g. v1.0.0):
 #   1. build the two Docker images and push them to GHCR, tagged with the
 #      version and "latest";
-#   2. create a GitHub Release for the tag with the deploy/ assets attached
-#      (deploy.sh, docker-compose.yml, .env.example) and release notes that
-#      list the exact image references + digests.
+#   2. create a GitHub Release for the tag with deploy/deploy.sh, the root
+#      docker-compose.yml and deploy/.env.example attached, plus release
+#      notes that list the exact image references + digests.
 on:
   push:
     tags:
@@ -149,5 +149,5 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             deploy/deploy.sh
-            deploy/docker-compose.yml
+            docker-compose.yml
             deploy/.env.example
