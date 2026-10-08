@@ -21,6 +21,21 @@ set -e
 
 chown -R 1000:1000 /data
 
+# --- Java runtime selection -------------------------------------------------
+# JAVA_VERSION (set by the management container per server) picks one of the
+# runtimes bundled in the image (/opt/java/jdk17, jdk21, jdk25). Unknown or
+# unset values keep the image default. Spigot 1.21.x, for example, refuses to
+# start on Java 25 ("Only up to Java 23 is supported").
+if [ -n "${JAVA_VERSION:-}" ]; then
+    if [ -x "/opt/java/jdk${JAVA_VERSION}/bin/java" ]; then
+        export JAVA_HOME="/opt/java/jdk${JAVA_VERSION}"
+        export PATH="${JAVA_HOME}/bin:${PATH}"
+    else
+        echo "[entrypoint] WARNING: Java ${JAVA_VERSION} is not bundled in this image; using the default runtime."
+    fi
+fi
+echo "[entrypoint] Java runtime: $(java -version 2>&1 | grep -m1 -i 'version') (JAVA_HOME=${JAVA_HOME:-/opt/java/openjdk})"
+
 MMPROXY_PORT="${MMPROXY_PORT:-25566}"
 MC_PORT="$(grep -E '^server-port=' /data/server.properties 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')"
 MC_PORT="${MC_PORT:-25565}"
