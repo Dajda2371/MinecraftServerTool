@@ -10,15 +10,31 @@
 #     server ran as UID 1000 against host bind mounts that don't honour
 #     chown on Docker Desktop for macOS/Windows.
 #   - No published ports (only reachable via mc-net -> Infrared)
+#   - go-mmproxy (Cloudflare's mmproxy in Go): Infrared sends the player's
+#     real address in a PROXY protocol header; go-mmproxy strips it and
+#     re-originates the connection to Java over loopback *from the player's
+#     IP*, so every server type (vanilla, Spigot, Forge, ...) logs real
+#     player IPs without plugin/mod support. Needs CAP_NET_ADMIN at runtime;
+#     the entrypoint degrades to a plain connection when it is missing.
 # ============================================================================
 
+# ---- Build stage: go-mmproxy -------------------------------------------------
+FROM golang:1.23-alpine AS mmproxy-build
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath
+RUN go install github.com/path-network/go-mmproxy@latest \
+    && /go/bin/go-mmproxy -h >/dev/null 2>&1 || true
+
+# ---- Runtime image ------------------------------------------------------------
 FROM eclipse-temurin:25-jre
 
-# gosu for privilege-dropping in the entrypoint.
+# gosu for privilege-dropping in the entrypoint; iproute2 for the loopback
+# routing rules go-mmproxy relies on.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu iproute2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=mmproxy-build /go/bin/go-mmproxy /usr/local/bin/go-mmproxy
 
 # Create the non-root minecraft user/group at UID/GID 1000. The
 # entrypoint execs as this UID via gosu.
@@ -28,11 +44,16 @@ RUN touch /etc/passwd /etc/group && \
     groupadd -g 1000 minecraft && \
     useradd -m -u 1000 -g 1000 minecraft
 
+# Advertise the real-IP helper so the management container only enables
+# PROXY protocol routing for containers started from an image that has it.
+LABEL mc-server-base.real-ip="true"
+
 # Working directory is /data; volume is mounted on top of this path at
 # container start, so anything placed here at build time is shadowed.
 WORKDIR /data
 
-# Entrypoint: chown /data, then gosu to UID 1000 and exec the command.
+# Entrypoint: chown /data, start go-mmproxy (if permitted), then gosu to
+# UID 1000 and exec the command.
 COPY docker/server-entrypoint.sh /usr/local/bin/server-entrypoint.sh
 RUN chmod +x /usr/local/bin/server-entrypoint.sh
 
