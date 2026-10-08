@@ -4,8 +4,9 @@ name: Release
 #   1. build the two Docker images and push them to GHCR, tagged with the
 #      version and "latest";
 #   2. create a GitHub Release for the tag with deploy/deploy.sh, the root
-#      docker-compose.yml and deploy/.env.example attached, plus release
-#      notes that list the exact image references + digests.
+#      docker-compose.yml, deploy/.env.example and the Coolify compose file
+#      attached, plus release notes that list the exact image references +
+#      digests.
 on:
   push:
     tags:
@@ -133,6 +134,14 @@ jobs:
           \`\`\`
 
           Re-run \`./deploy.sh\` after bumping \`VERSION\` in \`.env\` to upgrade.
+
+          ## Deploy on Coolify
+
+          Create a **Docker Compose** resource (empty) in Coolify and paste the
+          attached \`docker-compose.coolify.yml\`. Set \`MC_DOMAIN\` and
+          \`VERSION=${VERSION}\` under Environment Variables, assign a domain to the
+          \`mc-tool\` service (port 8000), open TCP 25565 on the host, and deploy.
+          Full guide: \`deploy/COOLIFY.md\` in the repository.
           NOTES_EOF
 
           echo "NOTES_PATH=$NOTES" >> "$GITHUB_ENV"
@@ -151,3 +160,4 @@ jobs:
             deploy/deploy.sh
             docker-compose.yml
             deploy/.env.example
+            deploy/docker-compose.coolify.yml

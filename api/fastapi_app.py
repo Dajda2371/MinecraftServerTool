@@ -87,6 +87,25 @@ import api.post.server.mods
 api.post.server.create.register_log_callback(socketio_log_callback)
 api.post.server.mods.register_log_callback(socketio_log_callback)
 
+def _prepull_server_base_image():
+    """Pull SERVER_BASE_IMAGE if it is not present locally. Failures are logged only."""
+    import docker as docker_mod
+    from api.post.server.run import DEFAULT_SERVER_IMAGE
+    try:
+        client = docker_mod.from_env()
+        try:
+            client.images.get(DEFAULT_SERVER_IMAGE)
+            print(f"[Startup] Server base image '{DEFAULT_SERVER_IMAGE}' already present.")
+            return
+        except docker_mod.errors.ImageNotFound:
+            pass
+        print(f"[Startup] Pulling server base image '{DEFAULT_SERVER_IMAGE}'...")
+        client.images.pull(DEFAULT_SERVER_IMAGE)
+        print(f"[Startup] Server base image '{DEFAULT_SERVER_IMAGE}' pulled.")
+    except Exception as e:
+        print(f"[Startup] Warning: could not pull server base image '{DEFAULT_SERVER_IMAGE}': {e}")
+
+
 # --- Lifespan Event Handler ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,6 +121,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[Startup Warning] Could not verify HTTPS status: {e}")
     
+    # Pre-pull the Minecraft base image in the background so the first server
+    # start does not block on a multi-minute pull (docker-py would pull lazily).
+    threading.Thread(target=_prepull_server_base_image, daemon=True).start()
+
     # Generate Infrared config files
     try:
         api.infrared.generate_infrared_config()
@@ -503,6 +526,13 @@ async def revoke_server_share_endpoint(name: str, username: str, current_user: s
     return {"message": f"Access revoked for user '{target_user}'"}
 
 # ============================================================================
+# Health (unauthenticated — used by container healthchecks / Coolify)
+# ============================================================================
+@fastapi_app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+# ============================================================================
 # System Endpoints (Admin Only)
 # ============================================================================
 @fastapi_app.get("/api/system/https")
@@ -511,6 +541,11 @@ async def get_system_https(admin_user: str = Depends(get_admin_user)):
 
 @fastapi_app.post("/api/system/https")
 async def set_system_https(data: HttpsSettingsRequest, admin_user: str = Depends(get_admin_user)):
+    if api.https.is_external_https_proxy():
+        raise HTTPException(
+            status_code=409,
+            detail="HTTPS is terminated by the hosting platform's reverse proxy; the in-app HTTPS setup is disabled.",
+        )
     if data.enabled:
         domain = data.domain.strip()
         if not domain:
@@ -1375,7 +1410,7 @@ async def get_proxy_status(current_user: str = Depends(get_current_user)):
     import docker as docker_mod
     try:
         client = docker_mod.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         running = container.status == "running"
         return {"running": running, "container": container.status}
     except docker_mod.errors.NotFound:
@@ -1420,7 +1455,7 @@ async def proxy_start(admin_user: str = Depends(get_admin_user)):
     import docker as docker_mod
     try:
         client = docker_mod.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         if container.status != "running":
             container.start()
         await sio.emit("proxy_routes_updated", {})
@@ -1433,7 +1468,7 @@ async def proxy_stop(admin_user: str = Depends(get_admin_user)):
     import docker as docker_mod
     try:
         client = docker_mod.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         container.stop(timeout=10)
         await sio.emit("proxy_routes_updated", {})
         return {"message": "Infrared container stopped."}

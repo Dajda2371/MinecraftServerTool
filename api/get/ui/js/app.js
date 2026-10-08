@@ -3170,12 +3170,25 @@ async function loadSystemHttpsSettings() {
         const statusText = document.getElementById('sys-https-status-text');
         const statusDetail = document.getElementById('sys-https-status-detail');
 
+        const saveBtn = document.getElementById('btn-save-https-settings');
+        const isExternal = data.status === 'external';
         const isEnabled = data.status === 'enabling' || data.status === 'enabled';
         enabledCheckbox.checked = isEnabled;
         domainInput.value = data.domain || '';
 
+        // When TLS is terminated by the hosting platform (e.g. Coolify/Traefik),
+        // the in-app nginx/certbot workflow is unavailable: lock the controls.
+        enabledCheckbox.disabled = isExternal;
+        domainInput.disabled = isExternal;
+        if (saveBtn) saveBtn.disabled = isExternal;
+
         // Display status details
-        if (data.status === 'disabled') {
+        if (isExternal) {
+            statusContainer.style.display = 'block';
+            statusBadge.className = 'card-status-badge badge-running';
+            statusText.textContent = 'Managed by hosting platform';
+            statusDetail.textContent = 'HTTPS is terminated by your hosting platform\'s reverse proxy (e.g. Coolify / Traefik). Configure the domain and certificate there; the built-in nginx/certbot setup is disabled.';
+        } else if (data.status === 'disabled') {
             statusContainer.style.display = 'none';
         } else {
             statusContainer.style.display = 'block';

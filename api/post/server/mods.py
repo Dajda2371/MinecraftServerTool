@@ -453,6 +453,7 @@ def start_mod_download_container(server_name, html_content):
     import socket
     import docker
     from api.post.server.mounts import server_data_mount, get_compose_labels, SERVER_DATA_VOLUME, write_volume_file
+    from api.post.server.run import DOCKER_NETWORK
 
     log_message(server_name, "Spawning isolated mod downloader container...")
     
@@ -497,7 +498,7 @@ def start_mod_download_container(server_name, html_content):
         name=container_name,
         detach=True,
         mounts=[server_data_mount(server_name)],
-        network="mc-net",
+        network=DOCKER_NETWORK,
         environment=env,
         working_dir="/app",
         labels=get_compose_labels(f"mod-downloader-{server_name}"),

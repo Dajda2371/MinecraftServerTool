@@ -29,6 +29,30 @@ VANILLA_GIST_URL = "https://gist.githubusercontent.com/cliffano/77a982a7503669c3
 # Real-time Socket.IO log callback hook
 log_callback = None
 
+
+def get_default_mc_subdomain():
+    """
+    Base domain for auto-generated server hostnames (``<name>.<subdomain>``).
+
+    Resolution order:
+      1. ``MC_SUBDOMAIN`` env var — full override, e.g. ``mc.example.com``
+      2. ``MC_DOMAIN`` env var — becomes ``mc.<MC_DOMAIN>``
+      3. ``MC_SUBDOMAIN`` from a local ``config.py`` (developer machines)
+      4. ``mc.localhost``
+    Empty env values count as unset.
+    """
+    sub = os.environ.get("MC_SUBDOMAIN", "").strip()
+    if sub:
+        return sub
+    domain = os.environ.get("MC_DOMAIN", "").strip()
+    if domain:
+        return f"mc.{domain}"
+    try:
+        from config import MC_SUBDOMAIN
+        return MC_SUBDOMAIN
+    except ImportError:
+        return "mc.localhost"
+
 def register_log_callback(cb):
     global log_callback
     log_callback = cb
@@ -439,11 +463,7 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
 
     # Generate hostname from config if not provided
     if hostname is None:
-        try:
-            from config import MC_SUBDOMAIN
-            hostname = f"{server_name}.{MC_SUBDOMAIN}"
-        except ImportError:
-            hostname = f"{server_name}.mc.localhost"
+        hostname = f"{server_name}.{get_default_mc_subdomain()}"
 
     if server_type.lower() == "vanilla":
         update_server_info(

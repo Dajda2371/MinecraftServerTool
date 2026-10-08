@@ -59,6 +59,29 @@ Players → hostname:25565 → Infrared (mc-infrared container)
 5.  **`docker-compose.yml`** — Infrastructure definition (mc-net network, mc-tool + infrared services)
 6.  **`supervisord.conf`** — Process manager config for management container
 
+# Configuration (environment variables)
+
+The image is configured entirely through environment variables so the same
+build runs under plain Compose, the GitHub-Release `deploy.sh` flow, and Coolify
+(`deploy/docker-compose.coolify.yml`, guide in `deploy/COOLIFY.md`).
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `POSTGRES_HOST/PORT/DB/USER/PASSWORD` | `postgres`/`5432`/`mcserver`/`mcserver`/`mcserver` | Database connection (`api/db.py`) |
+| `SERVER_BASE_IMAGE` | `mc-server-base:latest` | Image for spawned Minecraft containers; pre-pulled at startup |
+| `MC_DOMAIN` | – | Auto hostnames become `<server>.mc.<MC_DOMAIN>` (`api/post/server/create.py`) |
+| `MC_SUBDOMAIN` | – | Full override of the hostname suffix (takes precedence over `MC_DOMAIN`) |
+| `MC_DOCKER_NETWORK` | `mc-net` | Network joined by spawned containers (`api/post/server/run.py`) |
+| `INFRARED_CONTAINER` | – | Explicit Infrared container name; otherwise found via compose labels (`api/infrared.py`) |
+| `EXTERNAL_HTTPS_PROXY` | – | `true` disables the in-app nginx/certbot HTTPS feature (TLS handled by the platform proxy) |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Read by uvicorn; set `*` behind a trusted reverse proxy |
+
+The management container never relies on fixed sibling container names: it
+inspects its own container (`api/post/server/mounts.py`) to learn the real data
+volume name and compose project, and locates the `infrared` service by labels.
+Orchestrators that rename containers/volumes (Coolify) therefore work unchanged.
+`GET /healthz` is an unauthenticated health endpoint for container healthchecks.
+
 # Building and Running
 
 ## Running with Docker Compose (Recommended)

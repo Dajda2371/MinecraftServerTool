@@ -25,8 +25,34 @@ INFRARED_DIR = os.path.abspath("data/infrared")
 CONFIG_YML = os.path.join(INFRARED_DIR, "config.yml")
 PROXIES_DIR = os.path.join(INFRARED_DIR, "proxies")
 
-# Name of the Infrared Docker container (must match docker-compose.yml)
+# Compose service name of the Infrared proxy (see docker-compose*.yml).
+INFRARED_SERVICE_NAME = "infrared"
+# Legacy fixed container name, used only as a last-resort fallback.
 INFRARED_CONTAINER_NAME = "mc-infrared"
+
+
+def get_infrared_container(client=None):
+    """
+    Locate the Infrared proxy container.
+
+    Resolution order:
+      1. ``INFRARED_CONTAINER`` env var (explicit container name/id)
+      2. the ``infrared`` service of our own compose project (by labels —
+         works under Coolify, which rewrites ``container_name``)
+      3. the legacy fixed name ``mc-infrared``
+
+    Raises ``docker.errors.NotFound`` when nothing matches.
+    """
+    from api.post.server.mounts import find_sibling_container
+
+    client = client or docker.from_env()
+    explicit = os.environ.get("INFRARED_CONTAINER", "").strip()
+    if explicit:
+        return client.containers.get(explicit)
+    sibling = find_sibling_container(INFRARED_SERVICE_NAME, client=client)
+    if sibling is not None:
+        return sibling
+    return client.containers.get(INFRARED_CONTAINER_NAME)
 
 # Bind address for Infrared
 INFRARED_BIND = "0.0.0.0:25565"
@@ -147,17 +173,17 @@ def reload_proxy_config():
     # Restart the proxy container to force reload of the configurations.
     try:
         client = docker.from_env()
-        container = client.containers.get(INFRARED_CONTAINER_NAME)
+        container = get_infrared_container(client)
         if container.status == "running":
-            print(f"[Infrared] Restarting '{INFRARED_CONTAINER_NAME}' to apply configuration changes...")
+            print(f"[Infrared] Restarting '{container.name}' to apply configuration changes...")
             container.restart(timeout=1)
-            print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' restarted successfully.")
+            print(f"[Infrared] Container '{container.name}' restarted successfully.")
         else:
-            print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' is {container.status}; "
+            print(f"[Infrared] Container '{container.name}' is {container.status}; "
                   "config will apply when it starts.")
         return True
     except docker.errors.NotFound:
-        print(f"[Infrared] Container '{INFRARED_CONTAINER_NAME}' not found. "
+        print("[Infrared] Proxy container not found. "
               "It will pick up the config when it starts.")
         return False
     except Exception as e:

@@ -9,3 +9,7 @@ tests/
 Dockerfile*
 docker-compose.yml
 requirements.txt.bak
+.claude/
+.idea/
+.github/
+deploy/

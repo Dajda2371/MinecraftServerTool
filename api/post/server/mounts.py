@@ -10,23 +10,91 @@ boundary is enforced by Docker rather than by directory permissions.
 from docker.types import Mount
 import os
 
-def get_server_data_volume():
+_OWN_CONTAINER = None
+
+
+def get_own_container():
     """
-    Find the actual volume name mounted to /app/data in this container.
-    Falls back to 'mc-data' if not running in Docker or unable to inspect.
+    Return the Docker container object for the container we are running in,
+    or None when not running inside Docker / the socket is unavailable.
+
+    The lookup uses the container hostname, which Docker sets to the short
+    container id by default. The result is cached for the process lifetime.
     """
+    global _OWN_CONTAINER
+    if _OWN_CONTAINER is not None:
+        return _OWN_CONTAINER
     import socket
     import docker
     try:
         client = docker.from_env()
-        hostname = socket.gethostname()
-        me = client.containers.get(hostname)
+        _OWN_CONTAINER = client.containers.get(socket.gethostname())
+    except Exception:
+        _OWN_CONTAINER = None
+    return _OWN_CONTAINER
+
+
+def get_compose_project(default="minecraftservertool"):
+    """
+    Return the Docker Compose project name our own container belongs to.
+
+    Coolify (and plain ``docker compose -p``) pick arbitrary project names,
+    so sibling containers must be located through this label rather than
+    through fixed container names.
+    """
+    me = get_own_container()
+    if me is not None:
+        project = me.labels.get("com.docker.compose.project")
+        if project:
+            return project
+    return default
+
+
+def find_sibling_container(service_name, client=None):
+    """
+    Find the container of compose service ``service_name`` in our own
+    compose project (e.g. ``infrared``). Returns None when not found.
+    """
+    import docker
+    me = get_own_container()
+    if me is None:
+        return None
+    project = me.labels.get("com.docker.compose.project")
+    if not project:
+        return None
+    client = client or docker.from_env()
+    try:
+        matches = client.containers.list(
+            all=True,
+            filters={
+                "label": [
+                    f"com.docker.compose.project={project}",
+                    f"com.docker.compose.service={service_name}",
+                ]
+            },
+        )
+    except Exception:
+        return None
+    # Ignore one-off containers (docker compose run) if any slipped through.
+    matches = [c for c in matches if c.labels.get("com.docker.compose.oneoff", "False") != "True"]
+    return matches[0] if matches else None
+
+
+def get_server_data_volume():
+    """
+    Find the actual volume name mounted to /app/data in this container.
+    Falls back to 'mc-data' if not running in Docker or unable to inspect.
+
+    This keeps working when the orchestrator renames the volume (Coolify
+    prefixes named volumes with the resource uuid; ``docker compose -p``
+    prefixes them with the project name).
+    """
+    me = get_own_container()
+    if me is not None:
         for mount in me.attrs.get("Mounts", []):
             if mount.get("Destination") == "/app/data":
                 if mount.get("Type") == "volume" and mount.get("Name"):
                     return mount.get("Name")
-    except Exception:
-        pass
     return "mc-data"
 
 SERVER_DATA_VOLUME = get_server_data_volume()
@@ -128,24 +196,13 @@ def get_compose_labels(service_name):
     """
     Generate Docker Compose labels so dynamically spawned sibling containers
     are grouped into the same container/compose stack.
-    """
-    import socket
-    import docker
-    project_name = "minecraftservertool"  # Default fallback
-    try:
-        client = docker.from_env()
-        hostname = socket.gethostname()
-        me = client.containers.get(hostname)
-        project = me.labels.get("com.docker.compose.project")
-        if project:
-            project_name = project
-    except Exception:
-        pass
 
+    Only ``com.docker.compose.*`` labels are copied on purpose: Coolify
+    identifies the containers it owns by its own ``coolify.*`` labels, so the
+    spawned Minecraft containers are left alone when the stack is redeployed.
+    """
     return {
-        "com.docker.compose.project": project_name,
+        "com.docker.compose.project": get_compose_project(),
         "com.docker.compose.service": service_name,
         "com.docker.compose.oneoff": "False",
     }
-
-
