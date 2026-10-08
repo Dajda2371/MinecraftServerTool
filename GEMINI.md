@@ -185,10 +185,18 @@ Admins can add any other version/vendor under Admin → Java Runtimes:
 * **URL** — a direct link to a `.tar.gz` / `.tgz` / `.tar` / `.zip` archive.
 * **Upload** — the same kind of archive uploaded through the panel.
 
-Install jobs run in a background thread: download → safe extract (path
-traversal rejected) → locate the directory containing `bin/java` → move it to
-`data/.java/<id>/home` → fix permissions → verify with `java -version` in a
-throwaway container of the server base image (as UID 1000). Status
+Installs do not run inside the management container. For each runtime a
+short-lived sidecar `mc-java-<id>` is spawned from the management image with
+the runtime's volume subpath mounted at `/work`, running
+`python -m api.java_runtimes install` (same pattern as jar downloads and the
+mod downloader): download → safe extract (path traversal rejected) → locate
+the directory containing `bin/java` → move it to `/work/home`
+(= `data/.java/<id>/home`) → fix permissions. The management container streams
+the sidecar log, maps its `[stage] …` lines to the runtime status, waits for
+it to exit, removes it, then verifies with `java -version` in a throwaway
+container of the server base image (as UID 1000). Uploads are received by the
+panel, stored as `data/.java/<id>/archive.*`, and extracted by the same
+sidecar. Status
 (`downloading` / `extracting` / `verifying` / `ready` / `failed`) and the
 detected version are stored in the `java_runtimes` table. A `custom:<id>`
 selector mounts `data/.java/<id>/home` read-only at `/opt/java/custom` and sets

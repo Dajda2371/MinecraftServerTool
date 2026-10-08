@@ -16,9 +16,14 @@ Each runtime lives in the shared data volume at ``data/.java/<id>/home``
 read-only at /opt/java/custom and the entrypoint selects it when
 ``JAVA_VERSION=custom`` (see docker/server-entrypoint.sh).
 
-After extraction the runtime is verified by running ``java -version`` inside
-a throwaway container of the server base image, so a broken or wrong-arch
-archive never reaches a server.
+Download and extraction do NOT run inside the management container: for
+every install a short-lived sidecar container (``mc-java-<id>``, running this
+same image with ``python -m api.java_runtimes install``) is spawned with the
+runtime's volume subpath mounted at /work, exactly like jar downloads and the
+mod downloader. The management container only streams its log, tracks the
+status and, once the sidecar exits, verifies the result by running
+``java -version`` in a throwaway container of the server base image, so a
+broken or wrong-arch archive never reaches a server.
 """
 
 import os
@@ -312,34 +317,84 @@ def _parse_version(version_line):
     return m.group(1) if m else (version_line or "").strip()
 
 
+SIDECAR_WORKDIR = "/work"
+_STAGE_PREFIX = "[stage] "
+
+
+def _own_image(client):
+    """Image of the management container (the sidecar runs the same code)."""
+    from api.post.server.mounts import get_own_container
+    me = get_own_container()
+    if me is not None:
+        try:
+            return me.attrs["Config"]["Image"]
+        except Exception:
+            pass
+    return os.environ.get("MC_TOOL_IMAGE", "ghcr.io/dajda2371/minecraftservertool:latest")
+
+
 def _install_job(runtime_id, archive_path=None, url=None):
+    """
+    Management-container side: spawn the download/extract sidecar, follow its
+    log, then verify the extracted runtime.
+    """
+    import docker
+    from api.post.server.mounts import volume_subpath_mount, SERVER_DATA_VOLUME, get_compose_labels
+    from api.post.server.run import DOCKER_NETWORK
+
     rdir = runtime_dir(runtime_id)
+    container_name = f"mc-java-{runtime_id}"
+    client = docker.from_env()
     try:
         os.makedirs(rdir, exist_ok=True)
-        if url:
-            _set(runtime_id, status="downloading")
-            _log(runtime_id, f"Downloading {url}")
-            ext = _archive_ext(url.split("?")[0]) or ".tar.gz"
-            archive_path = os.path.join(rdir, f"archive{ext}")
-            _download(url, archive_path)
 
-        _set(runtime_id, status="extracting")
-        _log(runtime_id, "Extracting archive")
-        extract_dir = os.path.join(rdir, "extract")
-        shutil.rmtree(extract_dir, ignore_errors=True)
-        _extract(archive_path, extract_dir)
-        home_src = _find_java_home(extract_dir)
-        if not home_src:
-            raise RuntimeError("No bin/java found in the archive (is it a Linux JDK/JRE?).")
-        home = runtime_home(runtime_id)
-        shutil.rmtree(home, ignore_errors=True)
-        shutil.move(home_src, home)
-        shutil.rmtree(extract_dir, ignore_errors=True)
+        cmd = ["python3", "-u", "-m", "api.java_runtimes", "install", "--work", SIDECAR_WORKDIR]
+        if url:
+            cmd += ["--url", url]
+            _set(runtime_id, status="downloading")
+        else:
+            cmd += ["--archive", os.path.join(SIDECAR_WORKDIR, os.path.basename(archive_path))]
+            _set(runtime_id, status="extracting")
+
         try:
-            os.remove(archive_path)
-        except OSError:
+            client.containers.get(container_name).remove(force=True)
+        except docker.errors.NotFound:
             pass
-        _fix_permissions(home)
+
+        _log(runtime_id, f"Starting sidecar '{container_name}'")
+        container = client.containers.run(
+            image=_own_image(client),
+            command=cmd,
+            name=container_name,
+            detach=True,
+            mounts=[volume_subpath_mount(SIDECAR_WORKDIR, SERVER_DATA_VOLUME, f".java/{runtime_id}")],
+            network=DOCKER_NETWORK,
+            working_dir="/app",
+            environment={"PYTHONUNBUFFERED": "1"},
+            labels=get_compose_labels(f"java-{runtime_id}"),
+        )
+
+        tail = []
+        for raw in container.logs(stream=True, follow=True):
+            line = raw.decode("utf-8", errors="replace").rstrip()
+            if not line:
+                continue
+            tail.append(line)
+            tail = tail[-15:]
+            _log(runtime_id, f"sidecar: {line}")
+            if line.startswith(_STAGE_PREFIX):
+                _set(runtime_id, status=line[len(_STAGE_PREFIX):].strip())
+
+        exit_code = container.wait().get("StatusCode", -1)
+        try:
+            container.remove()
+        except Exception:
+            pass
+        if exit_code != 0:
+            raise RuntimeError("Install failed in sidecar: " + " | ".join(tail[-5:]))
+
+        if not os.path.isfile(os.path.join(runtime_home(runtime_id), "bin", "java")):
+            raise RuntimeError("Sidecar finished but no bin/java was produced.")
 
         _set(runtime_id, status="verifying")
         _log(runtime_id, "Verifying with java -version in a container")
@@ -353,6 +408,45 @@ def _install_job(runtime_id, archive_path=None, url=None):
     except Exception as e:
         _log(runtime_id, f"FAILED: {e}")
         _set(runtime_id, status="failed", error=str(e)[:1000])
+        try:
+            client.containers.get(container_name).remove(force=True)
+        except Exception:
+            pass
+
+
+def install_in_sidecar(work, url=None, archive=None):
+    """
+    Sidecar side (runs inside mc-java-<id> with the runtime dir at ``work``):
+    download (optional), extract, locate bin/java, move it to <work>/home and
+    fix permissions. Progress is reported as "[stage] <status>" lines that the
+    management container turns into runtime status updates.
+    """
+    os.makedirs(work, exist_ok=True)
+    if url:
+        print(f"{_STAGE_PREFIX}downloading", flush=True)
+        ext = _archive_ext(url.split("?")[0]) or ".tar.gz"
+        archive = os.path.join(work, f"archive{ext}")
+        print(f"Downloading {url}", flush=True)
+        _download(url, archive)
+        print(f"Downloaded {os.path.getsize(archive)} bytes", flush=True)
+
+    print(f"{_STAGE_PREFIX}extracting", flush=True)
+    extract_dir = os.path.join(work, "extract")
+    shutil.rmtree(extract_dir, ignore_errors=True)
+    _extract(archive, extract_dir)
+    home_src = _find_java_home(extract_dir)
+    if not home_src:
+        raise RuntimeError("No bin/java found in the archive (is it a Linux JDK/JRE?).")
+    home = os.path.join(work, "home")
+    shutil.rmtree(home, ignore_errors=True)
+    shutil.move(home_src, home)
+    shutil.rmtree(extract_dir, ignore_errors=True)
+    try:
+        os.remove(archive)
+    except OSError:
+        pass
+    _fix_permissions(home)
+    print(f"Runtime extracted to {home}", flush=True)
 
 
 def _start(runtime_id, **kwargs):
@@ -404,6 +498,12 @@ def remove_runtime(runtime_id):
     users = api.db.servers_using_java_runtime(runtime_id)
     if users:
         raise ValueError(f"Runtime is selected by server(s): {', '.join(users)}. Change their Java runtime first.")
+    # Stop a still-running install sidecar before deleting its working dir.
+    try:
+        import docker
+        docker.from_env().containers.get(f"mc-java-{runtime_id}").remove(force=True)
+    except Exception:
+        pass
     api.db.delete_java_runtime(runtime_id)
     shutil.rmtree(runtime_dir(runtime_id), ignore_errors=True)
 
@@ -423,3 +523,25 @@ def resume_unfinished():
                 _set(rt["id"], status="ready", error="")
             else:
                 _set(rt["id"], status="failed", error="Interrupted by a management container restart. Add it again.")
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Java runtime install worker (runs inside the mc-java-<id> sidecar).")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    p_install = sub.add_parser("install")
+    p_install.add_argument("--work", required=True, help="Runtime directory (volume subpath mounted here)")
+    p_install.add_argument("--url", help="Archive URL to download")
+    p_install.add_argument("--archive", help="Already-present archive path inside --work")
+    args = parser.parse_args()
+
+    if args.cmd == "install":
+        if not args.url and not args.archive:
+            parser.error("--url or --archive is required")
+        try:
+            install_in_sidecar(args.work, url=args.url, archive=args.archive)
+        except Exception as e:
+            print(f"ERROR: {e}", flush=True)
+            sys.exit(1)
