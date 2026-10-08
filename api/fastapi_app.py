@@ -31,6 +31,7 @@ import api.post.server.memory
 import api.post.server.delete
 import api.post.server.world
 import api.post.user.assign_memory
+import api.java_runtimes
 import api.post.user.reset_password
 import api.post.user.create
 import api.post.user.delete
@@ -121,6 +122,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[Startup Warning] Could not verify HTTPS status: {e}")
     
+    # Custom Java runtime jobs interrupted by a restart must not spin forever.
+    try:
+        api.java_runtimes.resume_unfinished()
+    except Exception as e:
+        print(f"[Startup] Warning: could not reconcile Java runtimes: {e}")
+
     # Pre-pull the Minecraft base image in the background so the first server
     # start does not block on a multi-minute pull (docker-py would pull lazily).
     threading.Thread(target=_prepull_server_base_image, daemon=True).start()
@@ -302,6 +309,18 @@ class UpdateHostnameRequest(BaseModel):
 class UpdateMemoryRequest(BaseModel):
     name: str
     memory_mb: int
+
+class UpdateJavaRuntimeRequest(BaseModel):
+    name: str
+    runtime: str = "auto"   # 'auto' | 'bundled:<major>' | 'custom:<id>'
+
+class JavaCatalogAddRequest(BaseModel):
+    distribution: str
+    major_version: int
+
+class JavaUrlAddRequest(BaseModel):
+    url: str
+    name: str = ""
 
 class UserRequest(BaseModel):
     username: str
@@ -1280,6 +1299,123 @@ async def server_memory(data: UpdateMemoryRequest, current_user: str = Depends(g
     else:
         await sio.emit("servers_updated", {})
         return {"message": result}
+
+# ============================================================================
+# Java runtimes (bundled in the base image + custom catalog/URL/upload installs)
+# ============================================================================
+def _bundled_java_list():
+    from api.post.server.run import BUNDLED_JAVA_VERSIONS
+    return [{"major_version": v, "selector": f"bundled:{v}"} for v in BUNDLED_JAVA_VERSIONS]
+
+def _validate_java_selector(selector: str):
+    from api.post.server.run import BUNDLED_JAVA_VERSIONS
+    selector = (selector or "auto").strip()
+    if selector == "auto":
+        return selector
+    if selector.startswith("bundled:"):
+        try:
+            if int(selector.split(":", 1)[1]) in BUNDLED_JAVA_VERSIONS:
+                return selector
+        except ValueError:
+            pass
+        raise HTTPException(status_code=400, detail="Unknown bundled Java version")
+    if selector.startswith("custom:"):
+        rt = api.db.get_java_runtime(selector.split(":", 1)[1])
+        if not rt:
+            raise HTTPException(status_code=404, detail="Custom runtime not found")
+        if rt["status"] != "ready":
+            raise HTTPException(status_code=409, detail=f"Custom runtime is not ready (status: {rt['status']})")
+        return selector
+    raise HTTPException(status_code=400, detail="Invalid runtime selector")
+
+@fastapi_app.get("/api/java/runtimes")
+async def list_java_runtimes(current_user: str = Depends(get_current_user)):
+    """Bundled + custom runtimes. Any logged-in user may read (needed to pick one for a server)."""
+    return {
+        "bundled": _bundled_java_list(),
+        "custom": api.java_runtimes.list_runtimes(),
+        "architecture": api.java_runtimes.host_architecture(),
+    }
+
+@fastapi_app.get("/api/java/catalog/distributions")
+async def java_catalog_distributions(admin_user: str = Depends(get_admin_user)):
+    try:
+        return {"distributions": api.java_runtimes.list_distributions()}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach the Java catalog (foojay Disco API): {e}")
+
+@fastapi_app.get("/api/java/catalog/versions")
+async def java_catalog_versions(distribution: str, admin_user: str = Depends(get_admin_user)):
+    try:
+        return {"distribution": distribution, "architecture": api.java_runtimes.host_architecture(),
+                "versions": api.java_runtimes.list_catalog_versions(distribution)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach the Java catalog (foojay Disco API): {e}")
+
+@fastapi_app.post("/api/java/runtimes/catalog", status_code=202)
+async def java_add_from_catalog(data: JavaCatalogAddRequest, admin_user: str = Depends(get_admin_user)):
+    try:
+        rid = api.java_runtimes.add_from_catalog(data.distribution.strip(), data.major_version)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Catalog error: {e}")
+    return {"message": "Runtime download started.", "id": rid}
+
+@fastapi_app.post("/api/java/runtimes/url", status_code=202)
+async def java_add_from_url(data: JavaUrlAddRequest, admin_user: str = Depends(get_admin_user)):
+    try:
+        rid = api.java_runtimes.add_from_url(data.url, data.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"message": "Runtime download started.", "id": rid}
+
+@fastapi_app.post("/api/java/runtimes/upload", status_code=202)
+async def java_add_from_upload(file: UploadFile = File(...), name: str = Form(""), admin_user: str = Depends(get_admin_user)):
+    try:
+        rid = api.java_runtimes.add_from_upload(file.file, file.filename or "", name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        await file.close()
+    return {"message": "Runtime uploaded; extracting.", "id": rid}
+
+@fastapi_app.delete("/api/java/runtimes/{runtime_id}")
+async def java_delete_runtime(runtime_id: str, admin_user: str = Depends(get_admin_user)):
+    if not api.db.get_java_runtime(runtime_id):
+        raise HTTPException(status_code=404, detail="Runtime not found")
+    try:
+        api.java_runtimes.remove_runtime(runtime_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"message": "Runtime removed."}
+
+@fastapi_app.get("/api/server/{name}/java")
+async def get_server_java(name: str, current_user: str = Depends(get_current_user)):
+    if not check_server_permission(name, current_user, "read_files"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    info = api.db.get_server_info(name)
+    if not info:
+        raise HTTPException(status_code=404, detail="Server not found")
+    from api.post.server.run import select_java_version
+    return {
+        "runtime": info.get("java_runtime") or "auto",
+        "auto_version": select_java_version(info.get("type", ""), info.get("version", "")),
+        "bundled": _bundled_java_list(),
+        "custom": [rt for rt in api.java_runtimes.list_runtimes() if rt["status"] == "ready"],
+    }
+
+@fastapi_app.post("/api/server/java")
+async def set_server_java(data: UpdateJavaRuntimeRequest, current_user: str = Depends(get_current_user)):
+    name = data.name.strip()
+    if not check_server_permission(name, current_user, "write_files"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not api.db.get_server_info(name):
+        raise HTTPException(status_code=404, detail="Server not found")
+    selector = _validate_java_selector(data.runtime)
+    api.db.update_server_java_runtime(name, selector)
+    await sio.emit("servers_updated", {})
+    return {"message": f"Java runtime for '{name}' set to {selector}. Restart the server to apply."}
 
 @fastapi_app.post("/api/server/command")
 async def execute_command(data: CommandRequest, current_user: str = Depends(get_current_user)):

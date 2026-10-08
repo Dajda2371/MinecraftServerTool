@@ -241,6 +241,29 @@
         </div>
     </div>
 
+    <!-- Server Java Runtime Modal -->
+    <div id="java-modal-overlay" class="modal-overlay" onclick="hideJavaModal(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>Java Runtime: <span id="java-server-name"></span></h3>
+                <button class="btn btn-icon" onclick="hideJavaModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <form id="java-runtime-form" onsubmit="saveServerJava(event)">
+                <div class="form-group">
+                    <label for="java-runtime-select">Runtime</label>
+                    <select id="java-runtime-select"></select>
+                    <span class="form-hint" id="java-runtime-hint">Auto picks the bundled Java that matches the Minecraft version. Changes apply on the next server start.</span>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-ghost" onclick="hideJavaModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-java">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Edit Memory Modal -->
     <div id="memory-modal-overlay" class="modal-overlay">
         <div class="modal" onclick="event.stopPropagation()">
@@ -452,6 +475,13 @@
                         <div style="display: flex; flex-direction: column; align-items: flex-start; margin-left: var(--space-sm); flex: 1; min-width: 0;">
                             <span style="font-weight: 600; font-size: 0.85rem;">Download World</span>
                             <span style="font-size: 0.725rem; color: var(--text-muted); white-space: normal; line-height: 1.3; text-align: left;">Export the world as a single-player save (.zip) — server must be stopped</span>
+                        </div>
+                    </button>
+                    <button class="btn btn-ghost" id="btn-settings-java" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsJava()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+                        <div style="margin-left: var(--space-md);">
+                            <div style="font-weight: 600;">Java Runtime</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400;">Pick the Java version this server runs on (auto, bundled or custom)</div>
                         </div>
                     </button>
                     <button class="btn btn-ghost owner-only" id="btn-settings-sharing" style="justify-content: flex-start; padding: var(--space-lg); width: 100%; text-align: left;" onclick="triggerSettingsSharing()">
@@ -947,6 +977,10 @@
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                         Proxy Management
                     </button>
+                    <button id="admin-tab-java-btn" class="settings-sidebar-btn" onclick="switchAdminTab('admin-tab-java')">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>
+                        Java Runtimes
+                    </button>
                     <button id="admin-tab-system-btn" class="settings-sidebar-btn" onclick="switchAdminTab('admin-tab-system')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         System Configuration
@@ -989,6 +1023,79 @@
                 </div>
                 
                 <!-- Tab 3: System Configuration -->
+                <div class="settings-content-pane" id="admin-tab-java-pane">
+                    <h4 style="margin-bottom: var(--space-md);">Java Runtimes</h4>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: var(--space-lg);">
+                        The server image bundles Java <span id="java-bundled-list">8, 16, 17, 21, 25</span> and picks one automatically per Minecraft version.
+                        Add any other version or vendor here, then select it per server under Settings → Java Runtime.
+                        Host architecture: <code id="java-host-arch">…</code>.
+                    </p>
+
+                    <div id="java-runtime-list" style="margin-bottom: var(--space-lg);"></div>
+
+                    <h5 style="margin-bottom: var(--space-sm);">Add a runtime</h5>
+                    <div class="settings-sidebar" style="display: flex; gap: var(--space-xs); margin-bottom: var(--space-md); flex-direction: row;">
+                        <button type="button" class="btn btn-ghost java-src-btn is-active" id="java-src-catalog-btn" onclick="switchJavaSource('catalog')">Catalog</button>
+                        <button type="button" class="btn btn-ghost java-src-btn" id="java-src-url-btn" onclick="switchJavaSource('url')">From URL</button>
+                        <button type="button" class="btn btn-ghost java-src-btn" id="java-src-upload-btn" onclick="switchJavaSource('upload')">Upload archive</button>
+                    </div>
+
+                    <div id="java-src-catalog" class="java-src-pane" style="max-width: 520px;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="java-catalog-dist">Distribution</label>
+                                <select id="java-catalog-dist" onchange="loadJavaCatalogVersions()"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="java-catalog-version">Version</label>
+                                <select id="java-catalog-version"></select>
+                            </div>
+                        </div>
+                        <span class="form-hint" id="java-catalog-hint">Versions come from the foojay Disco API (api.foojay.io) for this host's architecture. JRE builds are preferred when available.</span>
+                        <div class="form-actions" style="margin-top: var(--space-md);">
+                            <button type="button" class="btn btn-primary" id="btn-java-add-catalog" onclick="addJavaFromCatalog()">Download &amp; install</button>
+                        </div>
+                    </div>
+
+                    <div id="java-src-url" class="java-src-pane" style="display: none; max-width: 520px;">
+                        <div class="form-group">
+                            <label for="java-url-input">Archive URL</label>
+                            <input type="text" id="java-url-input" placeholder="https://…/OpenJDK17U-jre_x64_linux_hotspot_17.0.20_1.tar.gz" autocomplete="off">
+                            <span class="form-hint">Direct link to a Linux JDK/JRE archive (.tar.gz, .tgz or .zip) for this host's architecture.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="java-url-name">Display name (optional)</label>
+                            <input type="text" id="java-url-name" placeholder="e.g. GraalVM 21" autocomplete="off">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="btn-java-add-url" onclick="addJavaFromUrl()">Download &amp; install</button>
+                        </div>
+                    </div>
+
+                    <div id="java-src-upload" class="java-src-pane" style="display: none; max-width: 520px;">
+                        <div class="form-group">
+                            <label for="java-upload-file">Archive file</label>
+                            <input type="file" id="java-upload-file" accept=".tar.gz,.tgz,.tar,.zip,application/gzip,application/zip,application/x-tar">
+                            <span class="form-hint">A Linux JDK/JRE archive (.tar.gz, .tgz, .tar or .zip) for this host's architecture.</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="java-upload-name">Display name (optional)</label>
+                            <input type="text" id="java-upload-name" placeholder="e.g. Zulu 11" autocomplete="off">
+                        </div>
+                        <div id="java-upload-progress" class="progress-bar-container" style="display: none; margin-bottom: var(--space-md);">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs); font-size: 0.75rem;">
+                                <span style="color: var(--text-secondary);">Uploading…</span>
+                                <span id="java-upload-percent" style="font-weight: 600; color: var(--accent);">0%</span>
+                            </div>
+                            <div class="progress-bar-bg" style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 10px; overflow: hidden;">
+                                <div id="java-upload-bar" class="progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); border-radius: 10px; transition: width 0.15s ease;"></div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-primary" id="btn-java-add-upload" onclick="addJavaFromUpload()">Upload &amp; install</button>
+                        </div>
+                    </div>
+                </div>
                 <div class="settings-content-pane" id="admin-tab-system-pane">
                     <h4 style="margin-bottom: var(--space-md);">System Configuration</h4>
                     <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: var(--space-lg);">Configure SSL/TLS settings and custom routing options for the MC Server Manager control panel container.</p>

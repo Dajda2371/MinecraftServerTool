@@ -23,10 +23,19 @@ chown -R 1000:1000 /data
 
 # --- Java runtime selection -------------------------------------------------
 # JAVA_VERSION (set by the management container per server) picks one of the
-# runtimes bundled in the image (/opt/java/jdk17, jdk21, jdk25). Unknown or
+# runtimes bundled in the image (/opt/java/jdk8, jdk16, jdk17, jdk21, jdk25)
+# or "custom" for a runtime mounted at /opt/java/custom. Unknown or
 # unset values keep the image default. Spigot 1.21.x, for example, refuses to
 # start on Java 25 ("Only up to Java 23 is supported").
-if [ -n "${JAVA_VERSION:-}" ]; then
+if [ "${JAVA_VERSION:-}" = "custom" ]; then
+    # A user-provided JDK/JRE mounted read-only by the management container.
+    if [ -x "/opt/java/custom/bin/java" ]; then
+        export JAVA_HOME="/opt/java/custom"
+        export PATH="${JAVA_HOME}/bin:${PATH}"
+    else
+        echo "[entrypoint] WARNING: custom runtime not mounted at /opt/java/custom; using the default runtime."
+    fi
+elif [ -n "${JAVA_VERSION:-}" ]; then
     if [ -x "/opt/java/jdk${JAVA_VERSION}/bin/java" ]; then
         export JAVA_HOME="/opt/java/jdk${JAVA_VERSION}"
         export PATH="${JAVA_HOME}/bin:${PATH}"

@@ -3032,6 +3032,8 @@ function switchAdminTab(tabId) {
         loadProxySettingsView();
     } else if (tabId === 'admin-tab-system') {
         loadSystemHttpsSettings();
+    } else if (tabId === 'admin-tab-java') {
+        loadJavaRuntimesAdmin();
     }
 }
 
@@ -3510,3 +3512,254 @@ function setupSharingEventListeners() {
     }
 }
 
+
+
+// ============================================================================
+// Java Runtime — per server selection
+// ============================================================================
+function triggerSettingsJava() {
+    if (!activeSettingsServer) return;
+    const name = activeSettingsServer;
+    hideServerSettingsModal();
+    showJavaModal(name);
+}
+
+async function showJavaModal(name) {
+    document.getElementById('java-server-name').textContent = name;
+    const select = document.getElementById('java-runtime-select');
+    select.innerHTML = '<option>Loading…</option>';
+    document.getElementById('java-modal-overlay').classList.add('is-visible');
+    select.dataset.server = name;
+    try {
+        const data = await apiFetch(`/api/server/${encodeURIComponent(name)}/java`);
+        const opts = [];
+        opts.push(`<option value="auto">Auto — Java ${data.auto_version} (matches the Minecraft version)</option>`);
+        opts.push('<optgroup label="Bundled in the server image">');
+        for (const b of data.bundled) {
+            opts.push(`<option value="${b.selector}">Java ${b.major_version}</option>`);
+        }
+        opts.push('</optgroup>');
+        if (data.custom && data.custom.length) {
+            opts.push('<optgroup label="Custom runtimes">');
+            for (const rt of data.custom) {
+                opts.push(`<option value="custom:${rt.id}">${escapeHtml(rt.name)}${rt.version ? ' — ' + escapeHtml(rt.version) : ''}</option>`);
+            }
+            opts.push('</optgroup>');
+        }
+        select.innerHTML = opts.join('');
+        select.value = data.runtime || 'auto';
+        if (select.value !== (data.runtime || 'auto')) select.value = 'auto';
+    } catch (err) {
+        select.innerHTML = '<option value="auto">Auto</option>';
+        showToast(`Failed to load Java runtimes: ${err.message}`, 'error');
+    }
+}
+
+function hideJavaModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('java-modal-overlay').classList.remove('is-visible');
+}
+
+async function saveServerJava(e) {
+    e.preventDefault();
+    const select = document.getElementById('java-runtime-select');
+    const name = select.dataset.server;
+    const btn = document.getElementById('btn-save-java');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/api/server/java', 'POST', { name, runtime: select.value });
+        showToast(res.message || 'Java runtime saved.', 'success');
+        hideJavaModal();
+    } catch (err) {
+        showToast(`Failed to save: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ============================================================================
+// Java Runtimes — admin management (catalog / URL / upload)
+// ============================================================================
+let javaRuntimesPollTimer = null;
+
+function switchJavaSource(which) {
+    document.querySelectorAll('.java-src-pane').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.java-src-btn').forEach(el => el.classList.remove('is-active'));
+    const pane = document.getElementById('java-src-' + which);
+    const btn = document.getElementById('java-src-' + which + '-btn');
+    if (pane) pane.style.display = 'block';
+    if (btn) btn.classList.add('is-active');
+    if (which === 'catalog') loadJavaCatalogDistributions();
+}
+
+function javaStatusBadge(status) {
+    const cls = status === 'ready' ? 'badge-running' : (status === 'failed' ? 'badge-stopped' : 'badge-unknown');
+    const label = { ready: 'Ready', failed: 'Failed', downloading: 'Downloading…', extracting: 'Extracting…', verifying: 'Verifying…', pending: 'Pending…' }[status] || status;
+    return `<span class="card-status-badge ${cls}"><span class="badge-dot"></span>${label}</span>`;
+}
+
+async function loadJavaRuntimesAdmin() {
+    if (javaRuntimesPollTimer) { clearTimeout(javaRuntimesPollTimer); javaRuntimesPollTimer = null; }
+    const pane = document.getElementById('admin-tab-java-pane');
+    if (!pane || !pane.classList.contains('is-active')) return;
+    const list = document.getElementById('java-runtime-list');
+    try {
+        const data = await apiFetch('/api/java/runtimes');
+        document.getElementById('java-host-arch').textContent = data.architecture || '?';
+        document.getElementById('java-bundled-list').textContent = data.bundled.map(b => b.major_version).join(', ');
+        if (!data.custom.length) {
+            list.innerHTML = '<p style="font-size: 0.8rem; color: var(--text-muted);">No custom runtimes yet.</p>';
+        } else {
+            list.innerHTML = data.custom.map(rt => `
+                <div style="display: flex; align-items: center; gap: var(--space-md); padding: var(--space-sm) 0; border-bottom: 1px solid var(--border-subtle);">
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600;">${escapeHtml(rt.name)}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted);">
+                            ${rt.vendor ? escapeHtml(rt.vendor) + ' · ' : ''}${rt.version ? escapeHtml(rt.version) + ' · ' : ''}${escapeHtml(rt.source || '')}
+                            ${rt.servers && rt.servers.length ? '<br>Used by: ' + rt.servers.map(escapeHtml).join(', ') : ''}
+                            ${rt.status === 'failed' && rt.error ? '<br><span style="color: var(--red);">' + escapeHtml(rt.error) + '</span>' : ''}
+                        </div>
+                    </div>
+                    ${javaStatusBadge(rt.status)}
+                    <button class="btn btn-icon" title="Remove" onclick="deleteJavaRuntime('${rt.id}')" ${rt.servers && rt.servers.length ? 'disabled' : ''}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </div>`).join('');
+        }
+        if (data.custom.some(rt => ['pending', 'downloading', 'extracting', 'verifying'].includes(rt.status))) {
+            javaRuntimesPollTimer = setTimeout(loadJavaRuntimesAdmin, 3000);
+        }
+    } catch (err) {
+        list.innerHTML = `<p style="color: var(--red); font-size: 0.8rem;">Failed to load runtimes: ${escapeHtml(err.message)}</p>`;
+    }
+    const distSelect = document.getElementById('java-catalog-dist');
+    if (distSelect && !distSelect.options.length) loadJavaCatalogDistributions();
+}
+
+async function loadJavaCatalogDistributions() {
+    const distSelect = document.getElementById('java-catalog-dist');
+    if (distSelect.options.length) return;
+    distSelect.innerHTML = '<option>Loading…</option>';
+    try {
+        const data = await apiFetch('/api/java/catalog/distributions');
+        const preferred = ['temurin', 'zulu', 'corretto', 'liberica', 'microsoft', 'graalvm', 'sap_machine', 'oracle_open_jdk', 'semeru', 'dragonwell'];
+        const dists = data.distributions.slice().sort((a, b) => {
+            const ia = preferred.indexOf(a.api_parameter), ib = preferred.indexOf(b.api_parameter);
+            return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || a.name.localeCompare(b.name);
+        });
+        distSelect.innerHTML = dists.map(d => `<option value="${d.api_parameter}">${escapeHtml(d.name)}</option>`).join('');
+        await loadJavaCatalogVersions();
+    } catch (err) {
+        distSelect.innerHTML = '<option value="">Catalog unavailable</option>';
+        document.getElementById('java-catalog-hint').textContent = err.message;
+    }
+}
+
+async function loadJavaCatalogVersions() {
+    const dist = document.getElementById('java-catalog-dist').value;
+    const verSelect = document.getElementById('java-catalog-version');
+    if (!dist) { verSelect.innerHTML = ''; return; }
+    verSelect.innerHTML = '<option>Loading…</option>';
+    try {
+        const data = await apiFetch(`/api/java/catalog/versions?distribution=${encodeURIComponent(dist)}`);
+        if (!data.versions.length) {
+            verSelect.innerHTML = '<option value="">No Linux builds for this host</option>';
+            return;
+        }
+        verSelect.innerHTML = data.versions.map(v => {
+            const mb = v.size ? ` · ${(v.size / 1048576).toFixed(0)} MB` : '';
+            const lts = v.term_of_support === 'lts' ? ' · LTS' : '';
+            return `<option value="${v.major_version}">Java ${v.major_version} — ${escapeHtml(v.java_version)} (${(v.package_type || '').toUpperCase()}${lts}${mb})</option>`;
+        }).join('');
+    } catch (err) {
+        verSelect.innerHTML = '<option value="">Failed to load</option>';
+        showToast(`Catalog error: ${err.message}`, 'error');
+    }
+}
+
+async function addJavaFromCatalog() {
+    const dist = document.getElementById('java-catalog-dist').value;
+    const major = parseInt(document.getElementById('java-catalog-version').value, 10);
+    if (!dist || !major) { showToast('Pick a distribution and version.', 'error'); return; }
+    const btn = document.getElementById('btn-java-add-catalog');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/api/java/runtimes/catalog', 'POST', { distribution: dist, major_version: major });
+        showToast(res.message || 'Download started.', 'success');
+        loadJavaRuntimesAdmin();
+    } catch (err) {
+        showToast(`Failed: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function addJavaFromUrl() {
+    const url = document.getElementById('java-url-input').value.trim();
+    const name = document.getElementById('java-url-name').value.trim();
+    if (!url) { showToast('Enter an archive URL.', 'error'); return; }
+    const btn = document.getElementById('btn-java-add-url');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/api/java/runtimes/url', 'POST', { url, name });
+        showToast(res.message || 'Download started.', 'success');
+        document.getElementById('java-url-input').value = '';
+        document.getElementById('java-url-name').value = '';
+        loadJavaRuntimesAdmin();
+    } catch (err) {
+        showToast(`Failed: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function addJavaFromUpload() {
+    const fileInput = document.getElementById('java-upload-file');
+    const name = document.getElementById('java-upload-name').value.trim();
+    if (!fileInput.files.length) { showToast('Choose an archive file.', 'error'); return; }
+    const btn = document.getElementById('btn-java-add-upload');
+    const progress = document.getElementById('java-upload-progress');
+    const bar = document.getElementById('java-upload-bar');
+    const pct = document.getElementById('java-upload-percent');
+    const form = new FormData();
+    form.append('file', fileInput.files[0]);
+    form.append('name', name);
+    btn.disabled = true;
+    progress.style.display = 'block';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/java/runtimes/upload');
+    xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+            const p = Math.round(ev.loaded / ev.total * 100);
+            bar.style.width = p + '%'; pct.textContent = p + '%';
+        }
+    };
+    xhr.onload = () => {
+        btn.disabled = false;
+        progress.style.display = 'none';
+        bar.style.width = '0%';
+        let json = {};
+        try { json = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300) {
+            showToast(json.message || 'Upload complete; extracting.', 'success');
+            fileInput.value = '';
+            document.getElementById('java-upload-name').value = '';
+            loadJavaRuntimesAdmin();
+        } else {
+            showToast(`Upload failed: ${json.error || json.detail || xhr.status}`, 'error');
+        }
+    };
+    xhr.onerror = () => { btn.disabled = false; progress.style.display = 'none'; showToast('Upload failed (network error).', 'error'); };
+    xhr.send(form);
+}
+
+async function deleteJavaRuntime(id) {
+    if (!confirm('Remove this Java runtime? Servers using it must be switched first.')) return;
+    try {
+        const res = await apiFetch(`/api/java/runtimes/${encodeURIComponent(id)}`, 'DELETE');
+        showToast(res.message || 'Runtime removed.', 'success');
+        loadJavaRuntimesAdmin();
+    } catch (err) {
+        showToast(`Failed: ${err.message}`, 'error');
+    }
+}

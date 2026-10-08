@@ -33,7 +33,7 @@ REAL_IP_IMAGE_LABEL = "mc-server-base.real-ip"
 
 
 # Java runtimes bundled in the base image (see Dockerfile.server).
-BUNDLED_JAVA_VERSIONS = (17, 21, 25)
+BUNDLED_JAVA_VERSIONS = (8, 16, 17, 21, 25)
 # Force one runtime for every server (e.g. MC_JAVA_VERSION=21); empty = auto.
 FORCED_JAVA_VERSION = os.environ.get("MC_JAVA_VERSION", "").strip()
 
@@ -53,10 +53,12 @@ def parse_minecraft_version(server_type, version):
 
 def select_java_version(server_type, version):
     """
-    Pick the Java runtime for a server version:
-      - new year-based releases (26.x and later)  -> 25
-      - 1.20.5 .. 1.21.x                           -> 21 (Spigot 1.21 caps at 23)
-      - 1.17 .. 1.20.4 and anything older          -> 17 (best effort for <1.17)
+    Pick the bundled Java runtime for a Minecraft version:
+      - 26.1 and newer (year-based releases) -> 25
+      - 1.20.5 .. 1.21.x                      -> 21 (Spigot 1.21 caps at 23)
+      - 1.18   .. 1.20.4                      -> 17
+      - 1.17   .. 1.17.1                      -> 16
+      - 1.12   .. 1.16.5 (and older)          -> 8
     MC_JAVA_VERSION overrides for every server. Returns an int.
     """
     if FORCED_JAVA_VERSION.isdigit() and int(FORCED_JAVA_VERSION) in BUNDLED_JAVA_VERSIONS:
@@ -69,7 +71,52 @@ def select_java_version(server_type, version):
         return 25
     if minor >= 21 or (minor == 20 and patch >= 5):
         return 21
-    return 17
+    if minor >= 18:
+        return 17
+    if minor == 17:
+        return 16
+    return 8
+
+
+def resolve_java_runtime(info):
+    """
+    Turn a server's ``java_runtime`` selector into container options.
+
+    Returns (java_version_env, extra_mounts, description):
+      'auto'          -> bundled version picked by select_java_version
+      'bundled:<n>'   -> that bundled version (falls back to auto if unknown)
+      'custom:<id>'   -> 'custom' + read-only mount of the runtime at
+                         /opt/java/custom (falls back to auto if not ready)
+    """
+    selector = (info.get("java_runtime") or "auto").strip()
+    auto = select_java_version(info.get("type", ""), info.get("version", ""))
+
+    if selector.startswith("bundled:"):
+        try:
+            n = int(selector.split(":", 1)[1])
+        except ValueError:
+            n = None
+        if n in BUNDLED_JAVA_VERSIONS:
+            return str(n), [], f"bundled Java {n}"
+        print(f"[Docker] Unknown bundled runtime '{selector}', using auto (Java {auto}).")
+        return str(auto), [], f"auto Java {auto}"
+
+    if selector.startswith("custom:"):
+        runtime_id = selector.split(":", 1)[1]
+        import api.java_runtimes as jr
+        from api.db import get_java_runtime
+        try:
+            rt = get_java_runtime(runtime_id)
+        except Exception:
+            rt = None
+        if rt and jr.runtime_is_ready(runtime_id):
+            from api.post.server.mounts import volume_subpath_mount
+            mount = volume_subpath_mount(jr.CUSTOM_MOUNT_PATH, SERVER_DATA_VOLUME, jr.runtime_home_subpath(runtime_id), read_only=True)
+            return "custom", [mount], f"custom runtime '{rt['name']}' ({rt.get('version') or '?'})"
+        print(f"[Docker] Custom runtime '{runtime_id}' is missing or not ready; using auto (Java {auto}).")
+        return str(auto), [], f"auto Java {auto}"
+
+    return str(auto), [], f"auto Java {auto}"
 
 
 def ensure_image(client, image):
@@ -285,8 +332,8 @@ def run_server(server_name, only_create=False):
             print(f"[Firewall] Warning: failed to fetch firewall rules: {fw_err}")
 
         real_ip = real_ip_options(client, DEFAULT_SERVER_IMAGE)
-        java_version = select_java_version(info.get("type", ""), info.get("version", ""))
-        print(f"[Docker] Using Java {java_version} for {info.get('type')} {info.get('version')}.")
+        java_version, java_mounts, java_desc = resolve_java_runtime(info)
+        print(f"[Docker] Java for {info.get('type')} {info.get('version')}: {java_desc}.")
 
         if only_create:
             print(f"[Docker] Recreating container '{container_name}' in created/stopped state on internal port {port} with dynamic ports: {docker_ports}...")
@@ -297,7 +344,7 @@ def run_server(server_name, only_create=False):
                 # Connect internal network and also publish host ports
                 network=DOCKER_NETWORK,
                 ports=docker_ports,
-                mounts=[server_data_mount(server_name)],
+                mounts=[server_data_mount(server_name), *java_mounts],
                 working_dir="/data",
                 environment={
                     "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
@@ -322,7 +369,7 @@ def run_server(server_name, only_create=False):
                 # Connect internal network and also publish host ports
                 network=DOCKER_NETWORK,
                 ports=docker_ports,
-                mounts=[server_data_mount(server_name)],
+                mounts=[server_data_mount(server_name), *java_mounts],
                 working_dir="/data",
                 # Entrypoint in the image starts as root, chowns /data, then
                 # drops to UID 1000 via gosu before exec'ing Java.
