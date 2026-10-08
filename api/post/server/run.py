@@ -17,7 +17,7 @@ from api.infrared import reload_proxy_config
 from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME, get_compose_labels
 
 # Docker network name shared by all server containers and the management container
-DOCKER_NETWORK = "mc-net"
+DOCKER_NETWORK = os.environ.get("MC_DOCKER_NETWORK", "mc-net")
 
 # Default server image — built from Dockerfile.server via the
 # mc-server-base compose service. Ships with gosu + our entrypoint that

@@ -9,9 +9,26 @@ from api.post.server.mounts import (
     get_compose_labels,
     volume_subpath_mount
 )
+from api.post.server.run import DOCKER_NETWORK
+
+# Compose service name of the management container; resolvable on the shared
+# network regardless of the actual container_name (Coolify rewrites it).
+MC_TOOL_SERVICE_NAME = "mc-tool"
+
+
+def is_external_https_proxy():
+    """
+    True when TLS termination is handled by the hosting platform (Coolify /
+    Traefik, Caddy, ...). The in-app nginx+certbot workflow must then stay
+    off: it would try to bind host ports 80/443 that belong to that proxy.
+    Controlled by the ``EXTERNAL_HTTPS_PROXY`` env var.
+    """
+    return os.environ.get("EXTERNAL_HTTPS_PROXY", "").strip().lower() in ("1", "true", "yes", "on")
 
 def enable_https_async(domain: str):
     """Starts the Nginx + Certbot HTTPS workflow in a background thread."""
+    if is_external_https_proxy():
+        raise RuntimeError("HTTPS is terminated by an external reverse proxy (EXTERNAL_HTTPS_PROXY is set).")
     thread = threading.Thread(target=enable_https_workflow, args=(domain,), daemon=True)
     thread.start()
 
@@ -38,7 +55,7 @@ def enable_https_workflow(domain: str):
     }}
 
     location / {{
-        proxy_pass http://minecraft-server-tool:8000;
+        proxy_pass http://{MC_TOOL_SERVICE_NAME}:8000;
         # Large world uploads/downloads: no body size cap, stream the upload
         # straight through, and allow slow archive builds to finish.
         client_max_body_size 0;
@@ -79,7 +96,7 @@ def enable_https_workflow(domain: str):
                 volume_subpath_mount(target="/etc/letsencrypt", volume_name=SERVER_DATA_VOLUME, subpath="nginx/letsencrypt"),
                 volume_subpath_mount(target="/var/www/certbot", volume_name=SERVER_DATA_VOLUME, subpath="nginx/certbot_webroot")
             ],
-            network="mc-net",
+            network=DOCKER_NETWORK,
             detach=True,
             restart_policy={"Name": "unless-stopped"},
             labels=get_compose_labels("nginx-proxy")
@@ -101,7 +118,7 @@ def enable_https_workflow(domain: str):
                 volume_subpath_mount(target="/etc/letsencrypt", volume_name=SERVER_DATA_VOLUME, subpath="nginx/letsencrypt"),
                 volume_subpath_mount(target="/var/www/certbot", volume_name=SERVER_DATA_VOLUME, subpath="nginx/certbot_webroot")
             ],
-            network="mc-net",
+            network=DOCKER_NETWORK,
             detach=True,
             labels=get_compose_labels("certbot-verify")
         )
@@ -140,7 +157,7 @@ server {{
     ssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;
 
     location / {{
-        proxy_pass http://minecraft-server-tool:8000;
+        proxy_pass http://{MC_TOOL_SERVICE_NAME}:8000;
         # Large world uploads/downloads: no body size cap, stream the upload
         # straight through, and allow slow archive builds to finish.
         client_max_body_size 0;
@@ -176,6 +193,8 @@ server {{
 
 def disable_https():
     """Stops the reverse proxy Nginx container and cleans database settings."""
+    if is_external_https_proxy():
+        raise RuntimeError("HTTPS is terminated by an external reverse proxy (EXTERNAL_HTTPS_PROXY is set).")
     client = docker.from_env()
     api.db.set_setting("https_status", "disabled")
     api.db.set_setting("https_domain", "")
@@ -192,6 +211,8 @@ def disable_https():
 
 def get_https_status():
     """Returns the current state, active domain, and any errors of the HTTPS setup."""
+    if is_external_https_proxy():
+        return {"status": "external", "domain": "", "error": ""}
     status = api.db.get_setting("https_status", "disabled")
     domain = api.db.get_setting("https_domain", "")
     error = api.db.get_setting("https_error", "")
@@ -203,6 +224,9 @@ def get_https_status():
 
 def check_https_on_startup():
     """Verifies that Nginx is running if HTTPS is set to active."""
+    if is_external_https_proxy():
+        print("[HTTPS Startup Check] External reverse proxy in use; skipping in-app nginx/certbot.")
+        return
     status_info = get_https_status()
     if status_info["status"] == "enabled" and status_info["domain"]:
         print(f"[HTTPS Startup Check] HTTPS is active for {status_info['domain']}. Verifying Nginx...")

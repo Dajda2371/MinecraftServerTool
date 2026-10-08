@@ -186,7 +186,7 @@ def ApiProxyStart():
     import docker
     try:
         client = docker.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         if container.status != "running":
             container.start()
             print("Infrared container started.")
@@ -199,7 +199,7 @@ def ApiProxyStop():
     import docker
     try:
         client = docker.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         container.stop(timeout=10)
         print("Infrared container stopped.")
     except docker.errors.NotFound:
@@ -212,7 +212,7 @@ def ApiProxyStatus():
     import docker
     try:
         client = docker.from_env()
-        container = client.containers.get(api.infrared.INFRARED_CONTAINER_NAME)
+        container = api.infrared.get_infrared_container(client)
         print(f"Infrared container status: {container.status}")
     except docker.errors.NotFound:
         print("Infrared container not found.")
