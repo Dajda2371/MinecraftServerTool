@@ -34,8 +34,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the application code
 COPY . .
 
-# Ensure data directories exist
-RUN mkdir -p data/servers data/infrared data/infrared/proxies
+# Ensure the data directory exists. Do NOT pre-create data/infrared/* here:
+# Docker copies image content into a fresh named volume on first mount, and
+# an Infrared config volume that already contains proxies/ but no config.yml
+# makes Infrared's first-run setup fail ("mkdir ./proxies: file exists").
+# The app creates these directories at runtime (api.infrared.ensure_infrared_dirs).
+RUN mkdir -p data/servers
 
 # ---- Supervisor Configuration ----
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf

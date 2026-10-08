@@ -99,6 +99,23 @@ Proxy → Configuration*):
 
 ## Troubleshooting
 
+- **"no available server" on the panel domain**: Traefik has no healthy
+  container to route to. Check `mc-tool`'s logs in Coolify; the usual cause is
+  the database rejecting the password (see next item) so the app never starts.
+- **`password authentication failed for user "mcserver"`**: the Postgres data
+  volume was initialised under a different password than the one Coolify now
+  injects (for example by an earlier deployment of the root compose file).
+  Either delete the `mc-postgres-data` volume if the database is still empty, or
+  reset the role to the current value from the host:
+
+  ```bash
+  docker exec -it postgres-<uuid> sh -c 'psql -U mcserver -d mcserver -c "ALTER ROLE mcserver WITH PASSWORD '"'"'$POSTGRES_PASSWORD'"'"';"'
+  ```
+- **Infrared restarts with `mkdir ./proxies: file exists`**: Infrared found a
+  `proxies/` directory but no `config.yml` in its volume, which happens when it
+  starts before `mc-tool` has written the config. It recovers on its next
+  restart once `mc-tool` is healthy; images from v0.4.1 on no longer trigger it.
+
 - **Panel unreachable**: check the `mc-tool` domain in Coolify points to port
   8000 and that the container is healthy (`/healthz`).
 - **"Proxy: not found" in the panel**: the Infrared container could not be
