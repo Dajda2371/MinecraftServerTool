@@ -73,6 +73,7 @@ build runs under plain Compose, the GitHub-Release `deploy.sh` flow, and Coolify
 | `MC_SUBDOMAIN` | – | Full override of the hostname suffix (takes precedence over `MC_DOMAIN`) |
 | `MC_DOCKER_NETWORK` | `mc-net` | Network joined by spawned containers (`api/post/server/run.py`) |
 | `INFRARED_CONTAINER` | – | Explicit Infrared container name; otherwise found via compose labels (`api/infrared.py`) |
+| `MC_JAVA_VERSION` | – (auto) | Force one bundled Java runtime (17, 21 or 25) for every server; default picks per Minecraft version |
 | `MC_REAL_IP` | `1` | `0` disables the real-player-IP helper (go-mmproxy) for newly started servers |
 | `MC_REAL_IP_PROXY_PORT` | `25566` | Port go-mmproxy listens on inside each server container |
 | `EXTERNAL_HTTPS_PROXY` | – | `true` disables the in-app nginx/certbot HTTPS feature (TLS handled by the platform proxy) |
@@ -148,9 +149,25 @@ Unlike the previous Velocity-based setup, Infrared does NOT require a proxy plug
 ## Dependencies
 
 *   **`wget`:** Required to download server files. Install: `brew install wget` (macOS) or `apt-get install wget` (Linux)
-*   **Java 21+:** Required for modern Minecraft versions (inside the container).
+*   **Java:** 17, 21 and 25 are bundled in the server base image and selected per server version.
 *   **Docker:** Required for container management.
 *   **SQLite 3.35+:** Required for the drop-column migration that retires the legacy `forwarding_secret` column (ships with any modern Linux distribution).
+
+# Java Runtime per Server
+
+The base image bundles Java 17, 21 and 25 (`/opt/java/jdk17`, `jdk21`,
+`jdk25`). `run.py` (`select_java_version`) passes `JAVA_VERSION` to each
+container based on the Minecraft version (the leading `X.Y.Z` of the stored
+version, also for `mc-loader` Forge/NeoForge strings):
+
+| Minecraft | Java |
+| --- | --- |
+| 26.x and later (year-based releases) | 25 |
+| 1.20.5 – 1.21.x | 21 (Spigot 1.21 refuses anything above 23) |
+| 1.17 – 1.20.4, and older (best effort) | 17 |
+
+The entrypoint puts the chosen runtime on `PATH` and logs it. Unknown
+`JAVA_VERSION` values fall back to the image default (25).
 
 # Real Player IPs (PROXY protocol + go-mmproxy)
 

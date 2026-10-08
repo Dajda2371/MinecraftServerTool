@@ -10,6 +10,10 @@
 #     server ran as UID 1000 against host bind mounts that don't honour
 #     chown on Docker Desktop for macOS/Windows.
 #   - No published ports (only reachable via mc-net -> Infrared)
+#   - Java 17, 21 and 25 runtimes side by side (/opt/java/jdk17, jdk21,
+#     jdk25). The management container passes JAVA_VERSION per server
+#     (Spigot 1.21.x refuses Java > 23, 1.17-1.20.4 want 17, new vanilla
+#     releases run on 25); the entrypoint puts the chosen one on PATH.
 #   - go-mmproxy (Cloudflare's mmproxy in Go): Infrared sends the player's
 #     real address in a PROXY protocol header; go-mmproxy strips it and
 #     re-originates the connection to Java over loopback *from the player's
@@ -36,6 +40,17 @@ RUN apt-get update \
 
 COPY --from=mmproxy-build /go/bin/go-mmproxy /usr/local/bin/go-mmproxy
 
+# ---- Additional Java runtimes ----
+# Temurin images share the same Ubuntu base and ship Java at /opt/java/openjdk,
+# so the runtimes can be copied straight in. The image default (25) stays at
+# /opt/java/openjdk; the entrypoint switches JAVA_HOME/PATH via JAVA_VERSION.
+COPY --from=eclipse-temurin:17-jre /opt/java/openjdk /opt/java/jdk17
+COPY --from=eclipse-temurin:21-jre /opt/java/openjdk /opt/java/jdk21
+RUN ln -s /opt/java/openjdk /opt/java/jdk25 \
+    && /opt/java/jdk17/bin/java -version 2>&1 | head -1 \
+    && /opt/java/jdk21/bin/java -version 2>&1 | head -1 \
+    && /opt/java/jdk25/bin/java -version 2>&1 | head -1
+
 # Create the non-root minecraft user/group at UID/GID 1000. The
 # entrypoint execs as this UID via gosu.
 RUN touch /etc/passwd /etc/group && \
@@ -46,7 +61,8 @@ RUN touch /etc/passwd /etc/group && \
 
 # Advertise the real-IP helper so the management container only enables
 # PROXY protocol routing for containers started from an image that has it.
-LABEL mc-server-base.real-ip="true"
+LABEL mc-server-base.real-ip="true" \
+      mc-server-base.java-versions="17,21,25"
 
 # Working directory is /data; volume is mounted on top of this path at
 # container start, so anything placed here at build time is shadowed.

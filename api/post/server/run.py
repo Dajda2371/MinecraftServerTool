@@ -32,6 +32,46 @@ REAL_IP_PROXY_PORT = int(os.environ.get("MC_REAL_IP_PROXY_PORT", "25566"))
 REAL_IP_IMAGE_LABEL = "mc-server-base.real-ip"
 
 
+# Java runtimes bundled in the base image (see Dockerfile.server).
+BUNDLED_JAVA_VERSIONS = (17, 21, 25)
+# Force one runtime for every server (e.g. MC_JAVA_VERSION=21); empty = auto.
+FORCED_JAVA_VERSION = os.environ.get("MC_JAVA_VERSION", "").strip()
+
+
+def parse_minecraft_version(server_type, version):
+    """
+    Return (major, minor, patch) of the Minecraft version behind a stored
+    server version string. Forge/NeoForge store "mc-loader" (e.g.
+    "1.21.1-52.0.1"); the Minecraft part always comes first.
+    """
+    import re
+    m = re.match(r"^\s*(\d+)\.(\d+)(?:\.(\d+))?", str(version or ""))
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+
+
+def select_java_version(server_type, version):
+    """
+    Pick the Java runtime for a server version:
+      - new year-based releases (26.x and later)  -> 25
+      - 1.20.5 .. 1.21.x                           -> 21 (Spigot 1.21 caps at 23)
+      - 1.17 .. 1.20.4 and anything older          -> 17 (best effort for <1.17)
+    MC_JAVA_VERSION overrides for every server. Returns an int.
+    """
+    if FORCED_JAVA_VERSION.isdigit() and int(FORCED_JAVA_VERSION) in BUNDLED_JAVA_VERSIONS:
+        return int(FORCED_JAVA_VERSION)
+    parsed = parse_minecraft_version(server_type, version)
+    if parsed is None:
+        return 25
+    major, minor, patch = parsed
+    if major >= 2:  # year-based versioning (26.x, 27.x, ...)
+        return 25
+    if minor >= 21 or (minor == 20 and patch >= 5):
+        return 21
+    return 17
+
+
 def ensure_image(client, image):
     """Pull ``image`` if it is not present locally. Returns the Image or None."""
     try:
@@ -245,6 +285,8 @@ def run_server(server_name, only_create=False):
             print(f"[Firewall] Warning: failed to fetch firewall rules: {fw_err}")
 
         real_ip = real_ip_options(client, DEFAULT_SERVER_IMAGE)
+        java_version = select_java_version(info.get("type", ""), info.get("version", ""))
+        print(f"[Docker] Using Java {java_version} for {info.get('type')} {info.get('version')}.")
 
         if only_create:
             print(f"[Docker] Recreating container '{container_name}' in created/stopped state on internal port {port} with dynamic ports: {docker_ports}...")
@@ -259,6 +301,7 @@ def run_server(server_name, only_create=False):
                 working_dir="/data",
                 environment={
                     "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                    "JAVA_VERSION": str(java_version),
                     **real_ip.get("environment", {}),
                 },
                 cap_add=real_ip.get("cap_add"),
@@ -285,6 +328,7 @@ def run_server(server_name, only_create=False):
                 # drops to UID 1000 via gosu before exec'ing Java.
                 environment={
                     "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                    "JAVA_VERSION": str(java_version),
                     **real_ip.get("environment", {}),
                 },
                 cap_add=real_ip.get("cap_add"),
