@@ -9,7 +9,34 @@
 #
 # Start as root so we can set ownership, then drop privileges to the
 # unprivileged minecraft user (UID 1000) before exec'ing Java.
+#
+# Real player IPs: Infrared forwards the player's address in a PROXY
+# protocol header to MMPROXY_PORT. go-mmproxy strips the header and opens
+# the connection to Java on 127.0.0.1:<server-port> with the player's IP
+# as the TCP source address (IP_TRANSPARENT + loopback policy routing), so
+# the server logs/bans the real address. Requires CAP_NET_ADMIN; without
+# it we log a warning and run without the helper (Infrared then routes
+# directly to the server port, as before).
 set -e
 
 chown -R 1000:1000 /data
+
+MMPROXY_PORT="${MMPROXY_PORT:-25566}"
+MC_PORT="$(grep -E '^server-port=' /data/server.properties 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+MC_PORT="${MC_PORT:-25565}"
+
+if [ "${REAL_IP_PROXY:-1}" != "0" ] && command -v go-mmproxy >/dev/null 2>&1; then
+    if ip rule add from 127.0.0.1/8 iif lo table 123 2>/dev/null \
+       && ip route add local 0.0.0.0/0 dev lo table 123 2>/dev/null; then
+        # IPv6 loopback rules are best-effort (IPv6 may be disabled in the netns).
+        ip -6 rule add from ::1/128 iif lo table 123 2>/dev/null || true
+        ip -6 route add local ::/0 dev lo table 123 2>/dev/null || true
+        go-mmproxy -l "0.0.0.0:${MMPROXY_PORT}" -4 "127.0.0.1:${MC_PORT}" -6 "[::1]:${MC_PORT}" -p tcp &
+        echo "[entrypoint] go-mmproxy: :${MMPROXY_PORT} (PROXY protocol) -> 127.0.0.1:${MC_PORT}; players keep their real IP."
+    else
+        echo "[entrypoint] WARNING: cannot install loopback routing rules (CAP_NET_ADMIN missing?)." \
+             "Running without go-mmproxy; players will appear with the proxy's address."
+    fi
+fi
+
 exec gosu 1000:1000 "$@"

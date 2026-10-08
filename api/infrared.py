@@ -57,6 +57,26 @@ def get_infrared_container(client=None):
 # Bind address for Infrared
 INFRARED_BIND = "0.0.0.0:25565"
 
+# Container label set by run.py on server containers whose image ships the
+# go-mmproxy real-IP helper. Its value is the port go-mmproxy listens on;
+# Infrared then targets that port and sends the PROXY protocol header.
+REAL_IP_LABEL = "mc.real-ip.port"
+
+
+def get_real_ip_port(container_name, client=None):
+    """
+    Return the go-mmproxy port for ``container_name`` if the container was
+    started with the real-IP helper, else None (route directly to the
+    server port without a PROXY header). Works for stopped containers too.
+    """
+    try:
+        client = client or docker.from_env()
+        container = client.containers.get(container_name)
+        value = (container.labels or {}).get(REAL_IP_LABEL)
+        return int(value) if value else None
+    except Exception:
+        return None
+
 
 def ensure_infrared_dirs():
     """Create the Infrared config directories if they don't exist."""
@@ -109,6 +129,10 @@ def generate_proxy_files():
 
     current_names = set()
     written = 0
+    try:
+        client = docker.from_env()
+    except Exception:
+        client = None
 
     for srv in servers:
         name = srv["name"]
@@ -122,13 +146,24 @@ def generate_proxy_files():
 
         current_names.add(f"{name}.yml")
 
+        # Real player IPs: if the container runs go-mmproxy, hand the
+        # connection to it with a PROXY protocol header. Otherwise connect
+        # straight to the server port (no header — the server would choke).
+        real_ip_port = get_real_ip_port(container_name, client) if client else None
+        if real_ip_port:
+            backend = f"{container_name}:{real_ip_port}"
+            extra = "\n# Forward the player's real address (consumed by go-mmproxy in the container).\nsendProxyProtocol: true\n"
+        else:
+            backend = f"{container_name}:{port}"
+            extra = ""
+
         proxy_content = f"""# Infrared proxy for server '{name}' — auto-generated.
 domains:
   - "{hostname}"
 
 addresses:
-  - {container_name}:{port}
-"""
+  - {backend}
+{extra}"""
         proxy_path = os.path.join(PROXIES_DIR, f"{name}.yml")
         with open(proxy_path, "w") as f:
             f.write(proxy_content)

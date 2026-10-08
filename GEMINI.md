@@ -73,6 +73,8 @@ build runs under plain Compose, the GitHub-Release `deploy.sh` flow, and Coolify
 | `MC_SUBDOMAIN` | – | Full override of the hostname suffix (takes precedence over `MC_DOMAIN`) |
 | `MC_DOCKER_NETWORK` | `mc-net` | Network joined by spawned containers (`api/post/server/run.py`) |
 | `INFRARED_CONTAINER` | – | Explicit Infrared container name; otherwise found via compose labels (`api/infrared.py`) |
+| `MC_REAL_IP` | `1` | `0` disables the real-player-IP helper (go-mmproxy) for newly started servers |
+| `MC_REAL_IP_PROXY_PORT` | `25566` | Port go-mmproxy listens on inside each server container |
 | `EXTERNAL_HTTPS_PROXY` | – | `true` disables the in-app nginx/certbot HTTPS feature (TLS handled by the platform proxy) |
 | `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Read by uvicorn; set `*` behind a trusted reverse proxy |
 
@@ -149,6 +151,35 @@ Unlike the previous Velocity-based setup, Infrared does NOT require a proxy plug
 *   **Java 21+:** Required for modern Minecraft versions (inside the container).
 *   **Docker:** Required for container management.
 *   **SQLite 3.35+:** Required for the drop-column migration that retires the legacy `forwarding_secret` column (ships with any modern Linux distribution).
+
+# Real Player IPs (PROXY protocol + go-mmproxy)
+
+Infrared is a TCP proxy, so on its own every server would see players as the
+Infrared container's address. To fix this for **every server type** without
+plugins or mods, the base image (`Dockerfile.server`) ships
+[go-mmproxy](https://github.com/path-network/go-mmproxy):
+
+1. `run.py` starts server containers with `CAP_NET_ADMIN`, `MMPROXY_PORT` and
+   the label `mc.real-ip.port=25566` — only if the image carries the label
+   `mc-server-base.real-ip=true` (older base images keep the old behaviour).
+2. `docker/server-entrypoint.sh` installs loopback policy routing
+   (`ip rule add from 127.0.0.1/8 iif lo table 123` / `ip route add local
+   0.0.0.0/0 dev lo table 123`) and runs
+   `go-mmproxy -l 0.0.0.0:25566 -4 127.0.0.1:<server-port>` before dropping
+   to UID 1000 and exec'ing Java. If the capability is missing it logs a
+   warning and runs without the helper.
+3. `api/infrared.py` checks the container label and writes
+   `addresses: [mc-<name>:25566]` + `sendProxyProtocol: true` for such
+   servers; others get the plain `mc-<name>:25565` route without a header.
+
+go-mmproxy strips the PROXY header and connects to Java from the player's IP
+(IP_TRANSPARENT), so logs, bans and plugins see the real address. Direct
+connections through per-server published ports (firewall rules) still hit the
+server port without a header and keep working.
+
+Upgrading: servers started before this change keep the old route until they
+are stopped and started again from the panel (the container is recreated from
+the new base image with the capability and label).
 
 # DNS Setup
 

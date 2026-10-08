@@ -13,7 +13,7 @@ import docker
 
 from api.db import get_server_info, update_server_info, get_server_firewall_rules, get_server_port_from_properties
 from api.voicechat import sync_voicechat_properties_if_needed
-from api.infrared import reload_proxy_config
+from api.infrared import reload_proxy_config, REAL_IP_LABEL
 from api.post.server.mounts import server_data_mount, write_volume_file, SERVER_DATA_VOLUME, get_compose_labels
 
 # Docker network name shared by all server containers and the management container
@@ -23,6 +23,48 @@ DOCKER_NETWORK = os.environ.get("MC_DOCKER_NETWORK", "mc-net")
 # mc-server-base compose service. Ships with gosu + our entrypoint that
 # chowns /data and drops to UID 1000 before exec'ing Java.
 DEFAULT_SERVER_IMAGE = os.environ.get("SERVER_BASE_IMAGE", "mc-server-base:latest")
+
+# Real player IPs (see docker/server-entrypoint.sh): the base image runs
+# go-mmproxy on this port, Infrared sends the PROXY protocol header to it and
+# the server sees the player's real address. Set MC_REAL_IP=0 to disable.
+REAL_IP_ENABLED = os.environ.get("MC_REAL_IP", "1").strip().lower() not in ("0", "false", "no", "off")
+REAL_IP_PROXY_PORT = int(os.environ.get("MC_REAL_IP_PROXY_PORT", "25566"))
+REAL_IP_IMAGE_LABEL = "mc-server-base.real-ip"
+
+
+def ensure_image(client, image):
+    """Pull ``image`` if it is not present locally. Returns the Image or None."""
+    try:
+        return client.images.get(image)
+    except docker.errors.ImageNotFound:
+        print(f"[Docker] Pulling image '{image}'...")
+        try:
+            return client.images.pull(image)
+        except Exception as e:
+            print(f"[Docker] Warning: could not pull '{image}': {e}")
+            return None
+    except Exception as e:
+        print(f"[Docker] Warning: could not inspect image '{image}': {e}")
+        return None
+
+
+def real_ip_options(client, image):
+    """
+    Extra ``containers.run``/``create`` kwargs that enable the real-IP helper,
+    or {} when disabled or the image does not ship it (older base image).
+    """
+    if not REAL_IP_ENABLED:
+        return {}
+    img = ensure_image(client, image)
+    if img is None or (img.labels or {}).get(REAL_IP_IMAGE_LABEL) != "true":
+        print(f"[Docker] Image '{image}' has no real-IP helper; players will show the proxy address.")
+        return {}
+    return {
+        # go-mmproxy needs IP_TRANSPARENT + loopback policy routing (own netns only).
+        "cap_add": ["NET_ADMIN"],
+        "environment": {"MMPROXY_PORT": str(REAL_IP_PROXY_PORT)},
+        "labels": {REAL_IP_LABEL: str(REAL_IP_PROXY_PORT)},
+    }
 
 
 def ensure_network(client):
@@ -202,6 +244,8 @@ def run_server(server_name, only_create=False):
         except Exception as fw_err:
             print(f"[Firewall] Warning: failed to fetch firewall rules: {fw_err}")
 
+        real_ip = real_ip_options(client, DEFAULT_SERVER_IMAGE)
+
         if only_create:
             print(f"[Docker] Recreating container '{container_name}' in created/stopped state on internal port {port} with dynamic ports: {docker_ports}...")
             container = client.containers.create(
@@ -215,12 +259,14 @@ def run_server(server_name, only_create=False):
                 working_dir="/data",
                 environment={
                     "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                    **real_ip.get("environment", {}),
                 },
+                cap_add=real_ip.get("cap_add"),
                 # Resource limits
                 mem_limit=f"{memory_mb}m",
                 # Restart policy
                 restart_policy={"Name": "unless-stopped"},
-                labels=get_compose_labels(f"server-{server_name}"),
+                labels={**get_compose_labels(f"server-{server_name}"), **real_ip.get("labels", {})},
             )
         else:
             print(f"[Docker] Starting container '{container_name}' on internal port {port} with dynamic ports: {docker_ports}...")
@@ -239,12 +285,14 @@ def run_server(server_name, only_create=False):
                 # drops to UID 1000 via gosu before exec'ing Java.
                 environment={
                     "JAVA_TOOL_OPTIONS": "-XX:+UseContainerSupport",
+                    **real_ip.get("environment", {}),
                 },
+                cap_add=real_ip.get("cap_add"),
                 # Resource limits
                 mem_limit=f"{memory_mb}m",
                 # Restart policy
                 restart_policy={"Name": "unless-stopped"},
-                labels=get_compose_labels(f"server-{server_name}"),
+                labels={**get_compose_labels(f"server-{server_name}"), **real_ip.get("labels", {})},
             )
 
         # Update DB with container info
