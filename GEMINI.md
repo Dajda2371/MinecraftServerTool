@@ -155,19 +155,45 @@ Unlike the previous Velocity-based setup, Infrared does NOT require a proxy plug
 
 # Java Runtime per Server
 
-The base image bundles Java 17, 21 and 25 (`/opt/java/jdk17`, `jdk21`,
-`jdk25`). `run.py` (`select_java_version`) passes `JAVA_VERSION` to each
-container based on the Minecraft version (the leading `X.Y.Z` of the stored
+The base image bundles Java 8, 16, 17, 21 and 25 (`/opt/java/jdk<N>`).
+Each server has a `java_runtime` selector in the database (`auto`,
+`bundled:<N>` or `custom:<id>`), editable under Settings → Java Runtime.
+`run.py` (`resolve_java_runtime`) turns it into `JAVA_VERSION` for the
+container; `auto` maps the Minecraft version (the leading `X.Y.Z` of the stored
 version, also for `mc-loader` Forge/NeoForge strings):
 
 | Minecraft | Java |
 | --- | --- |
-| 26.x and later (year-based releases) | 25 |
+| 26.1 and later (year-based releases) | 25 |
 | 1.20.5 – 1.21.x | 21 (Spigot 1.21 refuses anything above 23) |
-| 1.17 – 1.20.4, and older (best effort) | 17 |
+| 1.18 – 1.20.4 | 17 |
+| 1.17 – 1.17.1 | 16 |
+| 1.12 – 1.16.5 (and older) | 8 |
 
 The entrypoint puts the chosen runtime on `PATH` and logs it. Unknown
 `JAVA_VERSION` values fall back to the image default (25).
+
+## Custom runtimes (`api/java_runtimes.py`)
+
+Admins can add any other version/vendor under Admin → Java Runtimes:
+
+* **Catalog** — every major version of every maintained distribution (Temurin,
+  Zulu, Corretto, Liberica, Microsoft, GraalVM, SapMachine, …) via the foojay
+  Disco API (`https://api.foojay.io/disco/v3.0`), filtered to Linux builds for
+  the host architecture (`docker info` → `x64` / `aarch64`). JRE packages are
+  preferred over JDKs.
+* **URL** — a direct link to a `.tar.gz` / `.tgz` / `.tar` / `.zip` archive.
+* **Upload** — the same kind of archive uploaded through the panel.
+
+Install jobs run in a background thread: download → safe extract (path
+traversal rejected) → locate the directory containing `bin/java` → move it to
+`data/.java/<id>/home` → fix permissions → verify with `java -version` in a
+throwaway container of the server base image (as UID 1000). Status
+(`downloading` / `extracting` / `verifying` / `ready` / `failed`) and the
+detected version are stored in the `java_runtimes` table. A `custom:<id>`
+selector mounts `data/.java/<id>/home` read-only at `/opt/java/custom` and sets
+`JAVA_VERSION=custom`; if the runtime is missing or not ready the server falls
+back to `auto`. Runtimes still selected by a server cannot be deleted.
 
 # Real Player IPs (PROXY protocol + go-mmproxy)
 

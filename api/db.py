@@ -51,6 +51,9 @@ def init_db():
     cursor.execute("ALTER TABLE servers ADD COLUMN IF NOT EXISTS hostname TEXT")
     cursor.execute("ALTER TABLE servers ADD COLUMN IF NOT EXISTS container_name TEXT")
     cursor.execute("ALTER TABLE servers ADD COLUMN IF NOT EXISTS memory_mb INTEGER DEFAULT 1024")
+    # Java runtime selection: 'auto' (pick by Minecraft version), 'bundled:<major>'
+    # (runtime shipped in the base image) or 'custom:<id>' (row in java_runtimes).
+    cursor.execute("ALTER TABLE servers ADD COLUMN IF NOT EXISTS java_runtime TEXT DEFAULT 'auto'")
     # Drop legacy column: forwarding_secret was used for Velocity modern
     # forwarding. Infrared does not require it.
     cursor.execute("ALTER TABLE servers DROP COLUMN IF EXISTS forwarding_secret")
@@ -131,6 +134,19 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS java_runtimes (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            vendor TEXT,
+            version TEXT,
+            source TEXT,
+            status TEXT DEFAULT 'pending',
+            error TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
         )
     ''')
 
@@ -324,7 +340,7 @@ def get_server_info(name):
     conn = _connect()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb "
+        "SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb, java_runtime "
         "FROM servers WHERE name = %s",
         (name,),
     )
@@ -341,6 +357,7 @@ def get_server_info(name):
             "hostname": data[6],
             "container_name": data[7],
             "memory_mb": data[8],
+            "java_runtime": data[9] or "auto",
         }
     return None
 
@@ -351,7 +368,7 @@ def get_all_servers():
     conn = _connect()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb FROM servers"
+        "SELECT name, owner, type, version, jar_path, port, hostname, container_name, memory_mb, java_runtime FROM servers"
     )
     rows = cursor.fetchall()
     conn.close()
@@ -367,6 +384,7 @@ def get_all_servers():
             "hostname": data[6],
             "container_name": data[7],
             "memory_mb": data[8],
+            "java_runtime": data[9] or "auto",
         })
     return servers
 
@@ -470,6 +488,107 @@ def update_server_memory(server_name, memory_mb):
     conn.commit()
     conn.close()
     return ok
+
+
+def update_server_java_runtime(server_name, runtime):
+    """Set a server's Java runtime selector ('auto', 'bundled:<n>' or 'custom:<id>')."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE servers SET java_runtime = %s WHERE name = %s", (runtime, server_name))
+    ok = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
+
+
+# ---------------------------------------------------------------------------
+# Java runtimes (custom JDK/JRE installs managed by api.java_runtimes)
+# ---------------------------------------------------------------------------
+
+_JAVA_RUNTIME_COLS = "id, name, vendor, version, source, status, error, created_at"
+
+
+def _java_runtime_row(row):
+    return {
+        "id": row[0],
+        "name": row[1],
+        "vendor": row[2],
+        "version": row[3],
+        "source": row[4],
+        "status": row[5],
+        "error": row[6],
+        "created_at": row[7].isoformat() if row[7] else None,
+    }
+
+
+def get_java_runtimes():
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT {_JAVA_RUNTIME_COLS} FROM java_runtimes ORDER BY created_at")
+    rows = cursor.fetchall()
+    conn.close()
+    return [_java_runtime_row(r) for r in rows]
+
+
+def get_java_runtime(runtime_id):
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT {_JAVA_RUNTIME_COLS} FROM java_runtimes WHERE id = %s", (runtime_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return _java_runtime_row(row) if row else None
+
+
+def insert_java_runtime(runtime_id, name, vendor, version, source, status="pending"):
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO java_runtimes (id, name, vendor, version, source, status) VALUES (%s, %s, %s, %s, %s, %s)",
+        (runtime_id, name, vendor, version, source, status),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_java_runtime(runtime_id, **fields):
+    """Update any of name/vendor/version/status/error on a runtime row."""
+    allowed = {"name", "vendor", "version", "status", "error", "source"}
+    cols = {k: v for k, v in fields.items() if k in allowed}
+    if not cols:
+        return
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    assignments = ", ".join(f"{k} = %s" for k in cols)
+    cursor.execute(f"UPDATE java_runtimes SET {assignments} WHERE id = %s", (*cols.values(), runtime_id))
+    conn.commit()
+    conn.close()
+
+
+def delete_java_runtime(runtime_id):
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM java_runtimes WHERE id = %s", (runtime_id,))
+    ok = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
+
+
+def servers_using_java_runtime(runtime_id):
+    """Names of servers whose java_runtime selector points at this custom runtime."""
+    init_db()
+    conn = _connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM servers WHERE java_runtime = %s", (f"custom:{runtime_id}",))
+    names = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return names
 
 
 # ---------------------------------------------------------------------------
