@@ -302,7 +302,10 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
 
     print(f"Starting build container ({image}) for server '{server_name}' version {server_version}...")
 
-    java_heap = int(memory_mb * 0.8)
+    # BuildTools hands the same -Xmx to every JVM it spawns (the Maven build
+    # runs in a separate one), so two near-full heaps inside the container's
+    # hard memory limit get the build OOM-killed. Keep the heap at half of it.
+    java_heap = max(512, int(memory_mb * 0.5))
     command = (
         f'bash -c "'
         f"apt-get update -qq && apt-get install -y -qq git && "
