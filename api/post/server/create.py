@@ -383,6 +383,22 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     return False, "Build failed.", log_content
 
 
+def _save_build_failure(server_name, log_content):
+    """
+    Keep the BuildTools output of a failed build under data/build-failures/.
+    The server folder is deleted on failure, so this is the only trace left
+    of why the build failed.
+    """
+    try:
+        os.makedirs("data/build-failures", exist_ok=True)
+        with open(f"data/build-failures/{server_name}.log", "w", encoding="utf-8") as f:
+            f.write(log_content)
+        tail = "\n".join(log_content.splitlines()[-40:])
+        print(f"[BuildTools] Build of '{server_name}' failed. Last lines:\n{tail}")
+    except Exception as e:
+        print(f"[BuildTools] Could not save failure log: {e}")
+
+
 def run_build_tools(server_name, server_version, memory_mb=1024):
     """
     Run BuildTools in a Docker container with retry logic for network errors
@@ -439,6 +455,7 @@ def run_build_tools(server_name, server_version, memory_mb=1024):
                 print(f"[System] BuildTools failed after {max_retries} attempts due to network errors.")
 
         print(f"[Debug] Build failed. See buildtools.log for details.")
+        _save_build_failure(server_name, log_content)
         break
 
     return False, "Failed to create server."
@@ -526,7 +543,12 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             memory_mb=memory_mb
         )
 
-        success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
+        try:
+            success, message = run_build_tools(server_name, server_version, memory_mb=memory_mb)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            success, message = False, f"Failed to create server: {e}"
         if success:
             err = _import_world_if_requested(server_name, world_archive)
             if err:
@@ -569,6 +591,10 @@ def create_server(server_name, server_type, server_version, owner="admin", hostn
             return f"Server '{server_name}' created successfully."
         else:
             shutil.rmtree(f"data/servers/{server_name}", ignore_errors=True)
+            try:
+                db_delete_server(server_name)
+            except Exception as e:
+                print(f"[DB] Warning: could not remove server '{server_name}': {e}")
             return message
 
     elif server_type.lower() == "forge":
