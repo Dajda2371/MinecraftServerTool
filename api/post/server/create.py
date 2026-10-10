@@ -309,6 +309,10 @@ def run_build_tools_container(server_name, server_version, java_version=DEFAULT_
     command = (
         f'bash -c "'
         f"apt-get update -qq && apt-get install -y -qq git && "
+        # Builds end with chown to uid 1000 while this container runs as root,
+        # so git would refuse the cached/previously built repos ("dubious
+        # ownership") and BuildTools' applyPatches.sh would fail.
+        f"git config --global --add safe.directory '*' && "
         f"for repo in Bukkit CraftBukkit Spigot BuildData; do "
         f"if [ ! -d /data/$repo ] && [ -d /cache/$repo ]; then "
         f"cp -a /cache/$repo /data/$repo; "
